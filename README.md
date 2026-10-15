@@ -1,6 +1,6 @@
 # scRNA-seq Analysis Scripts
 
-A general-purpose toolkit for single-cell RNA-seq (scRNA-seq) analysis: a **5-step Seurat v5 main pipeline**, **3 standalone downstream scripts**, and **1 required companion R helper**. Every script is file-in / file-out (`rds`, `h5ad`, `csv`, `tsv`), so any stage can be run on its own or chained into a full pipeline.
+A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scRNA-seq) analysis. It combines a step-numbered **Seurat v5 main pipeline** — per-sample QC and merging, doublet removal, normalization and batch integration, clustering and differential expression, cell-type annotation — with **standalone downstream scripts** (target-gene expression visualization, per-sample × per-cell-type statistics, compositional differential abundance, …), plus the companion R helper that renders the composition sankey. Every script takes its inputs as command-line paths (10x directories, `.h5`, `rds`, `h5ad`, tables, …) and writes its results to files (data objects, tables, figures, …), so any stage can be run on its own or chained into a full pipeline. **New scripts are added over time.**
 
 [中文说明 (Chinese)](README_zh.md) · Full manual (Chinese): [`USAGE.md`](USAGE.md)
 
@@ -50,7 +50,7 @@ standalone — independent of the pipeline numbering
 
 ## Requirements
 
-**R side** (step1–step5, `scRNA_gene_expr.r`, `scRNA_gene_DE.r`)
+**R side** (the pipeline steps and the standalone R scripts)
 
 - core: `Seurat` (v5), `tidyverse` (dplyr / ggplot2 / tidyr …), `patchwork`, `argparse`
 - doublets: `scDblFinder`, `BiocParallel`; optional DecontX: `celda`
@@ -103,7 +103,7 @@ path,sample,group
 
 ## Conventions
 
-- Scripts whose filename carries `stepN` (step1 → step5) form the main pipeline and are meant to be chained in order; the other three are standalone scripts that can be applied to any suitable input.
+- Scripts whose filename carries a `stepN` prefix form the main pipeline and are meant to be chained in order; the remaining scripts are standalone and can be applied to any suitable input.
 - Stages communicate through files — intermediate objects can be reused, and each stage's output prefix (e.g. `01.`, `02.`) matches its step number.
 - Existing key outputs are treated as a cache (re-plot only); delete the corresponding `rds` to force a full re-run.
 - For Harmony, the batch variable must be the sample/donor column — never the biological group column (step3 rejects `-BC group` so the group effect is not regressed out).
