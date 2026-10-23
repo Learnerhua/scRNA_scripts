@@ -1,6 +1,6 @@
 # scRNA-seq 分析脚本库
 
-一套**持续更新**的通用单细胞转录组（scRNA-seq）分析脚本库。它包含一条按步骤编号的 **Seurat v5 主分析流程**——每样本 QC 与合并、去双细胞、归一化与批次整合、聚类与差异表达、细胞类型注释——以及若干**独立下游脚本**（目标基因跨细胞类型表达可视化、样本 × 细胞类型统计、细胞组成成分差异分析等），并附带桑基图所需的配套 R 辅助脚本。所有脚本都以命令行参数接收输入（10x 目录、`.h5`、`rds`、`h5ad`、表格等路径），并把结果写成文件（数据对象、表格、图片等），因此每一步既可单独运行，也可串成完整流水线；**脚本会持续补充**。
+一套**持续更新**的通用单细胞转录组（scRNA-seq）分析脚本库。它包含一条按步骤编号的 **Seurat v5 主分析流程**——每样本 QC 与合并、去双细胞、归一化与批次整合、聚类与差异表达、细胞类型注释——以及若干**独立脚本**——数据准备与格式转换（h5ad 计数清洗、h5ad → Seurat rds、h5ad ⇄ rds）和下游分析（目标基因跨细胞类型表达可视化、样本 × 细胞类型统计、细胞组成成分差异分析等），并附带桑基图所需的配套 R 辅助脚本。所有脚本都以命令行参数接收输入（10x 目录、`.h5`、`rds`、`h5ad`、表格等路径），并把结果写成文件（数据对象、表格、图片等），因此每一步既可单独运行，也可串成完整流水线；**脚本会持续补充**。
 
 [English](README.md) · 完整手册（中文）：[`USAGE.md`](USAGE.md)
 
@@ -8,6 +8,10 @@
 
 | 脚本 | 类型 | 主要功能 | 输入 → 输出 | 示例图 |
 |---|---|---|---|---|
+| `scRNA_spRNA_h5ad_preprocess.py` | 独立（数据准备） | 确保表达矩阵是原始整数 counts（先用 `X`，否则回退 `raw.X`，两者都不是则中止），按指定 `var` 列重设基因名并合并同名基因；同时写出 `X` 与 `layers["counts"]` | `.h5ad`（目录 / 单文件）→ 含 `X` + `layers["counts"]` 的 `.h5ad` | — |
+| `scRNA_h5ad2rds.r` | 独立（格式转换） | 批量 `.h5ad` → Seurat `.rds`；两条后端（默认纯 R 的 `anndataR`，或经 reticulate 的 `sceasy`）。输入须带 `layers["counts"]` | `.h5ad`（目录 / 单文件）→ `.rds` | — |
+| `scRNA_h5ad_seurat_convert.r` | 独立（格式转换） | 单文件双向转换，按扩展名判方向：`.h5ad` → `.rds`、`.rds` → `.h5ad`（先转 factor 为 character；assay / 层 / 压缩可选） | `.h5ad` ⇄ `.rds` | — |
+| `scRNA_mtx2rds.r` | 独立（数据准备） | 把 **Broad Single Cell Portal** 下载的数据组装成 Seurat 对象：稠密矩阵（`-E`）或 `.mtx` + 细胞/基因文件（`-M/-C/-G`），元数据必填（`-m`，细胞名列默认 `NAME`，首行 `TYPE` 自动丢弃）。基因名 `_`→`-` 并 `make.unique`；非整数输入只保留 `data` 层 | 矩阵 + 元数据 → `seurat.rds` | — |
 | `scRNA_QC_step1.r` | 主流程 `step1` | 每样本独立 QC（阈值取自该样本自身的 nFeature_RNA / nCount_RNA 分位数，加 percent.mt 硬上限，可选 percent.HB 红细胞过滤），QC 通过后合并；基因级 `min.cells` 过滤在**合并之后**统一执行 | 10x 目录 / `.h5` 列表（CSV）→ 合并 Seurat 对象（仅 counts）+ QC 小提琴图/散点图 | `Images/01_QC/` |
 | `scRNA_dedoublets_step2.r` | 主流程 `step2` | 每样本 **scDblFinder** 去双细胞；可选 **DecontX** 去环境 RNA（同样按样本独立跑） | 合并 rds → 仅含单细胞的 rds（`seu_clean.rds`） | `Images/02_deContamination/` |
 | `scRNA_Nor_harmony_step3.r` | 主流程 `step3` | NormalizeData（LogNormalize）→ FindVariableFeatures（vst）→ ScaleData → RunPCA → **Harmony** 批次校正 | 干净 rds → 归一化 + 整合后的 rds（`seu_harmony.rds`） | `Images/03_Nor_Harmony/` |
@@ -21,6 +25,12 @@
 ## 流程总览
 
 ```text
+可选的上游准备 —— 从 .h5ad 起步时（而非 10x 输出）
+
+  原始 .h5ad ──▶ scRNA_spRNA_h5ad_preprocess.py ──▶ scRNA_h5ad2rds.r ──▶ Seurat rds
+                    （整数 counts + layers["counts"]）                      │
+                                                                          ▼ 作为 step1 的输入
+
 主流程 —— 脚本名带 stepN 前缀，通过 rds 文件依次串联
 
   10x 目录 / h5 列表
@@ -58,12 +68,16 @@
 - 批次整合与探索：`harmony`、`clustree`
 - 可选 Leiden 聚类：`reticulate`（脚本内部调用 `py_require("leidenalg")`）
 - `scRNA_gene_DE.r` 额外需要 `reshape2`
-- 桑基图（`sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
+- 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
+- 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认后端）；可选 `sceasy`（经 reticulate，其 Python 环境需 `numpy` + `anndata`）
+- 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
 
-**Python 侧**（`scRNA_composition_sccoda.py`）
+**Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）
 
 - `scCODA`、`tensorflow` / `tensorflow-probability`
-- `anndata`（注意与 zarr / numpy 的版本匹配：`anndata < 0.12` 拒 zarr ≥3，`anndata ≥ 0.13` 要求 numpy ≥2.1）、`numpy`、`pandas`、`matplotlib`、`seaborn`
+- `anndata`（注意与 zarr / numpy 的版本匹配：`anndata < 0.12` 拒 zarr ≥3，`anndata ≥ 0.13` 要求 numpy ≥2.1）
+- h5ad 预处理：`scanpy`、`scipy`、`numpy`、`pandas`
+- 组成分析：`pandas`、`matplotlib`、`seaborn`
 - 桑基图额外需要带 `ggalluvial` 的 `Rscript`；缺失时仅跳过该图，其余产物不受影响
 
 **解释器** —— 脚本 shebang 为 `#!/usr/bin/env Rscript` 与 `#!/usr/bin/env python3`，因此装了上述依赖的环境需在 `PATH` 上（如 `export PATH=/path/to/env/bin:$PATH`），或显式调用解释器：`Rscript script.r …`、`/path/to/env/bin/python script.py …`。
@@ -71,6 +85,13 @@
 ## 快速开始
 
 ```bash
+# 可选：从 .h5ad 起步
+./scRNA_spRNA_h5ad_preprocess.py -I h5ad_dir -V gene_symbols -P 00. -O 00_preprocess
+./scRNA_h5ad2rds.r               -I 00_preprocess -P 00. -O 00_rds
+
+# 可选：Broad Single Cell Portal 导出数据（稠密矩阵 + 元数据）
+./scRNA_mtx2rds.r                -E exprMatrix.tsv.gz -m metadata.tsv -CC NAME -P 00. -O 00_rds
+
 # 主流程
 ./scRNA_QC_step1.r          -I input_list.csv -DT 10X -P 01. -O 01_QC
 ./scRNA_dedoublets_step2.r  -I 01_QC/01.seu_afterQC.rds  -P 02. -O 02_deContamination
@@ -88,6 +109,9 @@
 ./scRNA_gene_expr.r         -I 05_annotation/05.seu_annotated.rds -G GENE1,GENE2,GENE3 -P 06. -O 06_gene_expr
 ./scRNA_gene_DE.r           -I 05_annotation/05.seu_annotated.rds -G GENE1 -CT celltypeA,celltypeB -P 07. -O 07_gene_DE
 ./scRNA_composition_sccoda.py -I input.h5ad -S sample -CT celltype -GC group --deterministic -P 08. -O 08_composition
+
+# 单文件格式互转
+./scRNA_h5ad_seurat_convert.r -I 05_annotation/05.seu_annotated.rds -O 09_export -P export.
 ```
 
 每个脚本都能自解释：执行 `<脚本> -h` 查看完整参数。
@@ -109,10 +133,12 @@ path,sample,group
 - 已存在的关键产物会被当作缓存（仅重画图）；删掉对应 rds 即可强制重跑。
 - Harmony 的批次变量必须用样本/供体列，**不要**用生物学分组列（step3 会对 `-BC group` 直接报错拦截，避免把分组差异校正掉）。
 - step5 不重算 DE，直接复用 step4 产出的 `clusters_DE/` 表。
+- 从 **Broad Single Cell Portal** 下载数据时，用 `scRNA_mtx2rds.r` 直接建对象（细胞名列默认 `NAME`，首行 `TYPE` 自动跳过）。
+- 从 `.h5ad` 起步时先跑 `scRNA_spRNA_h5ad_preprocess.py`：`scRNA_h5ad2rds.r` 需要 `layers["counts"]` 层；若转换出的 Seurat 对象只有名为 `X` 的层，主流程 step1（按 `layer = "counts"` 取计数）无法使用。
 
 ## 示例可视化输出
 
-`Images/` 目录收录了每个脚本的示例输出（每张图 PNG + PDF 同名成对），子目录与脚本一一对应，详见上表“示例图”一列。示例图均由脚本自身产出，用于展示输出形式与排版。
+`Images/` 目录收录了各绘图脚本的示例输出（每张图 PNG + PDF 同名成对），子目录与产出图的脚本一一对应（数据准备 / 格式转换脚本不产图），详见上表“示例图”一列。示例图均由脚本自身产出，用于展示输出形式与排版。
 
 ## 文档
 

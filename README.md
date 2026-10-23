@@ -1,6 +1,6 @@
 # scRNA-seq Analysis Scripts
 
-A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scRNA-seq) analysis. It combines a step-numbered **Seurat v5 main pipeline** — per-sample QC and merging, doublet removal, normalization and batch integration, clustering and differential expression, cell-type annotation — with **standalone downstream scripts** (target-gene expression visualization, per-sample × per-cell-type statistics, compositional differential abundance, …), plus the companion R helper that renders the composition sankey. Every script takes its inputs as command-line paths (10x directories, `.h5`, `rds`, `h5ad`, tables, …) and writes its results to files (data objects, tables, figures, …), so any stage can be run on its own or chained into a full pipeline. **New scripts are added over time.**
+A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scRNA-seq) analysis. It combines a step-numbered **Seurat v5 main pipeline** — per-sample QC and merging, doublet removal, normalization and batch integration, clustering and differential expression, cell-type annotation — with **standalone scripts** for data preparation and format conversion (h5ad count cleaning, h5ad → Seurat rds, h5ad ⇄ rds) and for downstream analyses (target-gene expression visualization, per-sample × per-cell-type statistics, compositional differential abundance, …), plus the companion R helper that renders the composition sankey. Every script takes its inputs as command-line paths (10x directories, `.h5`, `rds`, `h5ad`, tables, …) and writes its results to files (data objects, tables, figures, …), so any stage can be run on its own or chained into a full pipeline. **New scripts are added over time.**
 
 [中文说明 (Chinese)](README_zh.md) · Full manual (Chinese): [`USAGE.md`](USAGE.md)
 
@@ -8,6 +8,10 @@ A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scR
 
 | Script | Type | Main function | Input → Output | Example outputs |
 |---|---|---|---|---|
+| `scRNA_spRNA_h5ad_preprocess.py` | standalone (data prep) | Makes sure the matrix is raw integer counts (uses `X`, falls back to `raw.X`, aborts if neither looks like counts), renames genes from a chosen `var` column and sums duplicate gene names; writes both `X` and `layers["counts"]` | `.h5ad` (directory / single file) → `.h5ad` with `X` + `layers["counts"]` | — |
+| `scRNA_h5ad2rds.r` | standalone (conversion) | Batch `.h5ad` → Seurat `.rds`; two backends (`anndataR`, pure R, default; `sceasy` via reticulate). The input must carry `layers["counts"]` | `.h5ad` (directory / single file) → `.rds` | — |
+| `scRNA_h5ad_seurat_convert.r` | standalone (conversion) | Single-file bidirectional conversion, direction chosen from the extension: `.h5ad` → `.rds` and `.rds` → `.h5ad` (factors → character first; assay / layer / compression selectable) | `.h5ad` ⇄ `.rds` | — |
+| `scRNA_mtx2rds.r` | standalone (data prep) | Builds a Seurat object from **Broad Single Cell Portal** exports: dense matrix (`-E`) or `.mtx` + cell/gene files (`-M/-C/-G`), plus a required metadata table (`-m`, cell-name column defaults to `NAME`, a leading `TYPE` row is dropped). Genes get `_`→`-` and `make.unique`; non-integer input keeps only the `data` layer | matrix + metadata → `seurat.rds` | — |
 | `scRNA_QC_step1.r` | pipeline `step1` | Per-sample QC with sample-specific thresholds (quantiles of nFeature_RNA / nCount_RNA + hard cap on percent.mt, optional percent.HB for red-blood-cell removal), then merge QC-passing samples; gene-level `min.cells` filtering is applied **after** merging | 10x directory / `.h5` list (CSV) → merged Seurat object (counts only) + QC violin/scatter plots | `Images/01_QC/` |
 | `scRNA_dedoublets_step2.r` | pipeline `step2` | Per-sample doublet detection with **scDblFinder**; optional **DecontX** ambient-RNA decontamination (also per sample) | merged rds → singlet-only rds (`seu_clean.rds`) | `Images/02_deContamination/` |
 | `scRNA_Nor_harmony_step3.r` | pipeline `step3` | NormalizeData (LogNormalize) → FindVariableFeatures (vst) → ScaleData → RunPCA → **Harmony** batch correction | clean rds → normalized + integrated rds (`seu_harmony.rds`) | `Images/03_Nor_Harmony/` |
@@ -21,6 +25,12 @@ A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scR
 ## Pipeline overview
 
 ```text
+optional upstream preparation — when starting from .h5ad instead of 10x outputs
+
+  raw .h5ad ──▶ scRNA_spRNA_h5ad_preprocess.py ──▶ scRNA_h5ad2rds.r ──▶ Seurat rds
+                 (integer counts + layers["counts"])                    │
+                                                                        ▼ (feeds step1)
+
 main pipeline — scripts carry the stepN prefix and are chained through rds files
 
         │  step1 scRNA_QC_step1.r           per-sample QC + merge
@@ -58,11 +68,15 @@ standalone — independent of the pipeline numbering
 - optional Leiden clustering: `reticulate` (the scripts call `py_require("leidenalg")`)
 - `scRNA_gene_DE.r` also uses `reshape2`
 - sankey (`sankey_composition.r`): `ggalluvial`, `RColorBrewer`, `scales`, `ggplot2`, `dplyr`, `tidyr`
+- format conversion (`scRNA_h5ad2rds.r`, `scRNA_h5ad_seurat_convert.r`): `anndataR` (default backend); optional `sceasy` (via reticulate, whose Python environment needs `numpy` + `anndata`)
+- matrix import (`scRNA_mtx2rds.r`): `Matrix` (`readMM`), `data.table` (`fread`)
 
-**Python side** (`scRNA_composition_sccoda.py`)
+**Python side** (`scRNA_spRNA_h5ad_preprocess.py`, `scRNA_composition_sccoda.py`)
 
 - `scCODA`, `tensorflow` / `tensorflow-probability`
-- `anndata` (mind the zarr / numpy compatibility: `anndata < 0.12` rejects zarr ≥ 3, `anndata ≥ 0.13` requires numpy ≥ 2.1), `numpy`, `pandas`, `matplotlib`, `seaborn`
+- `anndata` (mind the zarr / numpy compatibility: `anndata < 0.12` rejects zarr ≥ 3, `anndata ≥ 0.13` requires numpy ≥ 2.1)
+- h5ad preprocessing: `scanpy`, `scipy`, `numpy`, `pandas`
+- composition analysis: `pandas`, `matplotlib`, `seaborn`
 - the sankey plot additionally needs `Rscript` with `ggalluvial`; if missing, that plot is skipped and everything else is unaffected
 
 **Interpreters** — shebangs are `#!/usr/bin/env Rscript` and `#!/usr/bin/env python3`, so the environment that holds these packages must be on `PATH` (e.g. `export PATH=/path/to/env/bin:$PATH`) or you should call the interpreter explicitly: `Rscript script.r …`, `/path/to/env/bin/python script.py …`.
@@ -70,6 +84,13 @@ standalone — independent of the pipeline numbering
 ## Quick start
 
 ```bash
+# optional: start from .h5ad
+./scRNA_spRNA_h5ad_preprocess.py -I h5ad_dir -V gene_symbols -P 00. -O 00_preprocess
+./scRNA_h5ad2rds.r               -I 00_preprocess -P 00. -O 00_rds
+
+# optional: Broad Single Cell Portal export (dense matrix + metadata)
+./scRNA_mtx2rds.r                -E exprMatrix.tsv.gz -m metadata.tsv -CC NAME -P 00. -O 00_rds
+
 # main pipeline
 ./scRNA_QC_step1.r          -I input_list.csv -DT 10X -P 01. -O 01_QC
 ./scRNA_dedoublets_step2.r  -I 01_QC/01.seu_afterQC.rds  -P 02. -O 02_deContamination
@@ -87,6 +108,9 @@ standalone — independent of the pipeline numbering
 ./scRNA_gene_expr.r         -I 05_annotation/05.seu_annotated.rds -G GENE1,GENE2,GENE3 -P 06. -O 06_gene_expr
 ./scRNA_gene_DE.r           -I 05_annotation/05.seu_annotated.rds -G GENE1 -CT celltypeA,celltypeB -P 07. -O 07_gene_DE
 ./scRNA_composition_sccoda.py -I input.h5ad -S sample -CT celltype -GC group --deterministic -P 08. -O 08_composition
+
+# single-file format round trip
+./scRNA_h5ad_seurat_convert.r -I 05_annotation/05.seu_annotated.rds -O 09_export -P export.
 ```
 
 Every script is self-documenting: run `<script> -h` for the full option list.
@@ -108,10 +132,12 @@ path,sample,group
 - Existing key outputs are treated as a cache (re-plot only); delete the corresponding `rds` to force a full re-run.
 - For Harmony, the batch variable must be the sample/donor column — never the biological group column (step3 rejects `-BC group` so the group effect is not regressed out).
 - `step5` does not recompute DE; it reuses the `clusters_DE/` tables produced by `step4`.
+- When starting from a **Broad Single Cell Portal** export, `scRNA_mtx2rds.r` assembles the Seurat object directly (cell-name column defaults to `NAME`; a leading `TYPE` row is skipped).
+- When starting from `.h5ad`, run `scRNA_spRNA_h5ad_preprocess.py` first: `scRNA_h5ad2rds.r` needs a `layers["counts"]` layer, and a Seurat object whose only layer is named `X` cannot be used by the pipeline (step1 reads `layer = "counts"`).
 
 ## Visualization examples
 
-The `Images/` directory contains example outputs for every script (PNG + PDF pairs), one subdirectory per script — see the "Example outputs" column above. All figures are produced by the scripts themselves and are meant to show the output format and layout.
+The `Images/` directory contains example outputs for the plotting scripts (PNG + PDF pairs), one subdirectory per script that produces figures — see the "Example outputs" column above. All figures are produced by the scripts themselves and are meant to show the output format and layout.
 
 ## Documentation
 

@@ -20,6 +20,10 @@
 
 | 脚本 | 用途 | 输入 → 输出 |
 |---|---|---|
+| `scRNA_spRNA_h5ad_preprocess.py` | h5ad 计数矩阵预处理：判定并取出原始整数 counts（`X`，否则回退 `raw.X`）、按 `-V` 重设基因名并合并同名基因 | h5ad（目录 / 单文件）→ 含 `X` + `layers["counts"]` 的 h5ad |
+| `scRNA_h5ad2rds.r` | 批量 h5ad → Seurat rds（`anndataR` / `sceasy` 两条路径） | h5ad（目录 / 单文件）→ rds |
+| `scRNA_h5ad_seurat_convert.r` | 单文件双向格式转换（按扩展名自动判方向） | h5ad ⇄ rds |
+| `scRNA_mtx2rds.r` | 把 Broad Single Cell Portal 下载的矩阵 + 元数据组装成 Seurat 对象（稠密矩阵或稀疏三元组两种输入） | 矩阵文件（+ metadata）→ `seurat.rds` |
 | `scRNA_gene_expr.r` | 目标基因跨细胞类型表达可视化 | 已注释 rds → 均值 CSV + 5 类图 |
 | `scRNA_gene_DE.r` | 样本 × 细胞类型表达矩阵 + 热图 / 柱状图 / 箱线图 | 已注释 rds → 表 + 图 |
 | `scRNA_composition_sccoda.py` | 细胞组成成分差异分析（scCODA） | h5ad / 计数表 → 效应表 + 图 |
@@ -29,12 +33,14 @@
 使用约定：
 
 - 主流程各步以文件衔接，中间产物可单独复用；建议每步输出到独立目录（如 `01_QC/`、`02_deContamination/`），输出前缀（`01.` `02.` …）与步骤号对应，便于追溯。
+- 数据准备/格式转换类脚本（`scRNA_spRNA_h5ad_preprocess.py` → `scRNA_h5ad2rds.r`）是从 h5ad 起步时的前置链：先清洗计数矩阵，再转成 Seurat rds，之后即可接主流程 step1；`scRNA_h5ad_seurat_convert.r` 负责单文件双向互转（含 rds → h5ad 导出）。
+- 从 Broad Single Cell Portal（singlecell.broadinstitute.org）下载的数据可用 `scRNA_mtx2rds.r` 直接建对象：稠密矩阵走 `-E`，稀疏三元组走 `-M/-C/-G`，元数据里细胞名列用 `-CC` 指定（SCP 导出默认列名就是 `NAME`）。
 - 独立脚本不依赖主流程的步骤顺序：`scRNA_gene_expr.r`、`scRNA_gene_DE.r` 需要一个含 celltype 列的已注释 Seurat 对象（典型来源是 step5 的 `seu_annotated.rds`）；`scRNA_composition_sccoda.py` 直接读 h5ad 或样本 × 细胞类型计数表，与主流程无关。
 - 脚本会识别已存在的关键产物作为缓存（通常只重画图、不重算），强制重跑时删除对应 rds 即可。
 
 ## 可视化输出示例（`Images/`）
 
-本目录下的 `Images/` 存放各脚本的示例可视化输出（每张图 PNG + PDF 同名成对），子目录与脚本一一对应：
+本目录下的 `Images/` 存放各脚本的示例可视化输出（每张图 PNG + PDF 同名成对），子目录与产出图的脚本一一对应（数据准备 / 格式转换类脚本不产图，因此没有对应子目录）：
 
 | 子目录 | 对应脚本 | 内容 |
 |---|---|---|
@@ -763,6 +769,217 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 
 ---
 
+## 9 scRNA_spRNA_h5ad_preprocess.py（独立脚本）—— h5ad 计数矩阵预处理
+
+### 功能
+
+把 h5ad 整理成后续分析可直接使用的形态，做三件事：
+
+1. **确定哪一份矩阵是原始整数 counts**：先看 `adata.X`（随机抽 1000 个细胞，按 1e-6 容差判断取值是否全为整数）；不是整数则回退 `adata.raw.X`；两者都不是整数则报错中止。
+2. **重设基因名并合并同名基因**：用 `-V` 指定的 `adata.var` 列作基因名，同名基因按细胞**求和**合并（sparse COO + `sum_duplicates`，整数提升为 int64 防溢出，不落稠密矩阵）。
+3. **产出标准结构**：把计数同时写入 `X` 与 `adata.layers["counts"]`，供下游（尤其 `scRNA_h5ad2rds.r`）直接取用。
+
+它是 `scRNA_h5ad2rds.r` 的前置：后者要求 h5ad 内已有 `layers["counts"]`。
+
+### 输入
+
+`-I` 目录（处理其中所有 `.h5ad`，扩展名大小写不敏感）或 `-F` 单个 h5ad 文件，二者互斥且必须给其一。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_dir` | 无 | h5ad 所在目录（与 `-F` 互斥）|
+| `-F, --file` | 无 | 单个 h5ad 文件（与 `-I` 互斥）|
+| `-V, --var_index` | 无 | `adata.var` 中用作基因名的列；不传则沿用原 index 并跳过同名基因合并（仅警告）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 单文件
+./scRNA_spRNA_h5ad_preprocess.py -F input.h5ad -V gene_symbols -P 00. -O 00_preprocess
+
+# 整个目录
+./scRNA_spRNA_h5ad_preprocess.py -I h5ad_dir -V gene_symbols -P 00. -O 00_preprocess
+```
+
+### 输出
+
+`<前缀><原名>.h5ad`（gzip 压缩）：含 `X`、`layers["counts"]`、原 `obs`；var 只保留基因名 index。
+
+终端打印：每个文件的 counts 判定结果（`[counts check]` 行的 is_integer / zero_fraction / min / max）、选用了哪个矩阵、去重前后基因数。
+
+### 注意事项
+
+- **先跑本脚本再转 rds**：`scRNA_h5ad2rds.r` 会删掉名为 `X` 的 layer，因此输入 h5ad 必须已有 `layers["counts"]`——本脚本正是产出该层的那一步。
+- 计数判定是**抽样**（1000 细胞）且未固定随机种子：混合型数据（部分整数、部分非整数）可能判定不稳，看终端 `[counts check]` 行确认。
+- 不传 `-V` 时保留原 var index 且**不合并同名基因**；若原 index 存在重复基因名，后续建 Seurat 对象会出问题。
+- 同名基因合并是**求和**（不是取平均），与常见 10x 处理一致。
+- `-I` 模式下文件顺序取自 `os.listdir()`（未排序），不影响结果。
+
+---
+
+## 10 scRNA_h5ad2rds.r（独立脚本）—— 批量 h5ad → Seurat rds
+
+### 功能
+
+把一批（或单个）h5ad 转成 Seurat `.rds`，两条后端：
+
+- `-M anndataR`（默认，纯 R）：`anndataR::read_h5ad(path, as = "Seurat")`，随后删掉名为 `X` 的 layer，再 `saveRDS`。
+- `-M sceasy`：`sceasy::convertFormat(from = "anndata", to = "seurat")`，经 reticulate 调用 `-P_env` 指定的 Python 环境；脚本会检查该环境已安装 `numpy` 与 `anndata`。
+
+### 输入
+
+`-I` 目录（取其中 `.h5ad`，大小写不敏感）或 `-F` 单文件，互斥必填其一。**h5ad 需含 `layers["counts"]`**（见注意事项）。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无 | h5ad 目录（与 `-F` 互斥）|
+| `-F, --file` | 无 | 单个 h5ad（与 `-I` 互斥）|
+| `-M, --method` | anndataR | 转换后端：`anndataR` 或 `sceasy` |
+| `-T, --threads` | 12 | 线程数（仅 sceasy 分支注册 BiocParallel；见注意事项）|
+| `-P_env` | 无 | `-M sceasy` 时的 Python 解释器路径（该分支必填）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 目录批量（默认 anndataR）
+./scRNA_h5ad2rds.r -I 00_preprocess -O 00_rds -P 00.
+
+# 单文件
+./scRNA_h5ad2rds.r -F 00_preprocess/sample1.h5ad -O 00_rds -P 00.
+
+# sceasy 后端（需指定 Python 环境）
+./scRNA_h5ad2rds.r -I 00_preprocess -M sceasy -P_env /path/to/env/bin/python -O 00_rds
+```
+
+### 输出
+
+`<前缀><原名>.rds`（`.h5ad` 后缀替换为 `.rds`），逐文件打印保存结果。
+
+### 注意事项
+
+- **输入必须带 `layers["counts"]`**：只有 `X` 的 h5ad 会在删除 `X` 层时触发 `invalid class "Assay5" object: 'default' must be between 0 and the number of layers present` 并中止。先跑 `scRNA_spRNA_h5ad_preprocess.py` 即可满足。
+- anndataR 分支直接操作 `@layers`（S4 内部结构），升级 anndataR 版本后需重测。
+- `-T` 目前无实际加速：sceasy 分支虽注册了 `MulticoreParam` / `SnowParam`，但循环内逐个 `convertFormat`；anndataR 分支完全不用该参数。
+- sceasy 路径的 Python 环境需预装 `numpy` + `anndata`；脚本只检查、不安装。
+- `-I` 模式下文件顺序取自 `list.files()`（未排序），不影响结果。
+
+---
+
+## 11 scRNA_h5ad_seurat_convert.r（独立脚本）—— 单文件双向格式转换
+
+### 功能
+
+按输入扩展名自动判定方向，单文件互转：
+
+- 输入 `.h5ad` → `anndataR::read_h5ad(as = "Seurat")` → 存 `.rds`
+- 输入 `.rds` → `readRDS` → 把 `meta.data` 的 **factor 列转 character**（否则写 h5ad 会报错）→ `as_AnnData(assay_name, x_mapping)` → `write_h5ad(compression)`
+- 其他扩展名 → `Unsupported file format` 报错
+
+### 输入
+
+`-I` 单个 `.rds` 或 `.h5ad`（必填）。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | （必填） | 输入文件（`.rds` 或 `.h5ad`）|
+| `-O, --outpath` | 当前目录 | 输出目录 |
+| `-P, --prefix` | 输入名（去扩展名） | 输出文件名前缀 |
+| `-A, --assay_name` | RNA | 仅 rds → h5ad：要导出的 assay |
+| `-X, --x_mapping` | counts | 仅 rds → h5ad：映射到 AnnData `X` 的层 |
+| `-C, --compression` | gzip | 仅 rds → h5ad：`none` / `gzip` / `lzf` |
+
+### 用法示例
+
+```bash
+# rds → h5ad（导出给 scanpy / cellxgene 等）
+./scRNA_h5ad_seurat_convert.r -I 05_annotation/05.seu_annotated.rds -O 09_export -P export.
+
+# h5ad → rds
+./scRNA_h5ad_seurat_convert.r -I external.h5ad -O 00_rds -P 00. -A RNA -X counts
+```
+
+### 输出
+
+`<前缀><输入名>.rds` 或 `<前缀><输入名>.h5ad`；结束打印对象信息与总耗时。
+
+### 注意事项
+
+- **h5ad → rds 不重命名层**：只有 `X` 的 h5ad 转出来的 Seurat 对象，层名就是 `X`（不是 `counts`）。本库 step1 用 `GetAssayData(layer = "counts")` 取计数，这种对象会找不到层——接主流程前请确认源 h5ad 带 `layers["counts"]`（或先跑 `scRNA_spRNA_h5ad_preprocess.py`）。
+- rds → h5ad 会把 `meta.data` 的 factor 转成 character，导出的 h5ad 层名来自 `-X`（默认 `counts`）。
+- 与 `scRNA_h5ad2rds.r -F` 功能重叠，但本脚本**双向**且不删层，行为更保守。
+- `as_AnnData()` / `write_h5ad()` 未加包名前缀，依赖 `library(anndataR)` 已附加。
+
+
+---
+
+## 12 scRNA_mtx2rds.r（独立脚本）—— Broad SCP 矩阵转 Seurat 对象
+
+### 功能
+
+把 **Broad Single Cell Portal**（singlecell.broadinstitute.org）下载的表达矩阵和元数据直接组装成 Seurat 对象，省去手工读矩阵、对齐细胞名、构造对象的过程。两种输入模式（互斥，必须给其中一种）：
+
+- **稠密矩阵**（`-E`）：SCP 导出的 `*_exprMatrix.tsv` / `.tsv.gz` / `.csv`，第一列是基因、表头是细胞名。用 `fread` 读，失败回退 `read.csv`。
+- **稀疏三元组**（`-M` + `-C` + `-G`）：`.mtx` 矩阵 + 每行一个细胞名的文件 + 每行一个基因名的文件，脚本会校验行列数是否与矩阵一致。
+
+元数据 `-m` 必填（TSV / CSV 自动识别分隔符），细胞名列由 `-CC` 指定，**默认 `NAME`**——正是 SCP metadata 的列名；若元数据首行首格含 `TYPE`，该行会被自动丢弃（SCP 导出常见）。
+
+处理流程：读矩阵 → 基因名 `_` 统一换成 `-` 并 `make.unique()` 去重 → 读元数据并以其细胞名列作行名 → 取「矩阵列 ∩ 元数据行」的细胞 → NA 填 `"Unknown"` → 判定数值类型并建对象。
+
+### 输入
+
+- 表达矩阵：`-E` 单个稠密矩阵文件，或 `-M`/`-C`/`-G` 三个文件一起给
+- 元数据：`-m`（必填）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-E, --expr_file` | 无 | 稠密表达矩阵（首列基因、表头细胞名）|
+| `-M, --mtx_file` | 无 | 稀疏矩阵文件（`.mtx`）|
+| `-C, --cell_file` | 无 | 每行一个细胞名，行数须等于矩阵列数 |
+| `-G, --gene_file` | 无 | 每行一个基因名，行数须等于矩阵行数 |
+| `-m, --meta_file` | （必填） | 元数据文件（TSV / CSV 自动识别）|
+| `-CC, --cell_column` | NAME | 元数据中细胞名所在列 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# SCP 稠密矩阵 + 元数据
+./scRNA_mtx2rds.r -E exprMatrix.tsv.gz -m metadata.tsv -CC NAME -P 00. -O 00_rds
+
+# 稀疏三元组
+./scRNA_mtx2rds.r -M matrix.mtx -C barcodes.tsv -G genes.tsv -m metadata.tsv -P 00. -O 00_rds
+```
+
+### 输出
+
+`<前缀>seurat.rds`。终端打印矩阵维度、元数据维度、数值类型判定结果，以及对象概览（维度、metadata 列、前几个 feature 名）。
+
+### 注意事项
+
+- **数值类型决定层结构**：全整数 → `counts` + `data`（`data = log1p(counts)`）；出现非整数（SCP 有时直接给归一化矩阵）→ 造一个全 0 的 counts 再**删除 counts 层**，只保留 `data`。后者不能接主流程 step1 / step2（它们要读 `counts`），只能作为已归一化对象做降维/可视化。
+- **`-E` 模式不接受重复基因名**：设 `rownames` 时会直接报 `duplicate 'row.names' are not allowed`（`make.unique()` 在其后执行，救不回来）；`-M` 模式能容忍重复，重复基因会被改名为 `G-A` / `G-A.1` 两个独立 feature，**不会合并求和**。
+- **NA 处理是整表替换**：`meta[is.na(meta)] <- "Unknown"`，某个数值列只要有 NA，整列会被转成 character。
+- **`-CC` 列名写错时报错不直观**：会落到 `CreateSeuratObject` 的 `Rownames must be supplied`。
+- **细胞取交集**：矩阵与元数据细胞不完全重合时，按交集保留，多余细胞静默丢弃。
+- 基因名统一把 `_` 换成 `-`（`gsub("_", "-")`），与常见 10x 基因名写法一致。
+- 非整数分支里 `seo@assays$RNA@layers$counts <- NULL` 是直接操作 slot，仅适用 Seurat v5。
+
+
+---
+
 ## 附录：环境与依赖
 
 **R 侧**（主流程各步与独立 R 脚本）：
@@ -774,12 +991,15 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 - Leiden 聚类（可选）：`reticulate`（脚本内部 `py_require("leidenalg")`）
 - `scRNA_gene_DE.r` 额外：`reshape2`
 - 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
+- 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认路径）；可选 `sceasy`（经 reticulate，其配套 Python 环境需预装 `numpy` + `anndata`）
+- 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
 
-**Python 侧**（`scRNA_composition_sccoda.py`）：
+**Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）：
 
 - `scCODA`、`tensorflow` / `tensorflow-probability`
 - `anndata`（注意与 `zarr` / `numpy` 的版本匹配：`anndata < 0.12` 拒 zarr ≥3，`anndata ≥ 0.13` 要求 numpy ≥2.1）
-- `numpy`、`pandas`、`matplotlib`、`seaborn`
+- h5ad 预处理：`scanpy`、`anndata`、`scipy`、`numpy`、`pandas`
+- 组成分析：`numpy`、`pandas`、`matplotlib`、`seaborn`
 - 桑基图需 `Rscript` 与 R 的 `ggalluvial`（缺失时该图跳过，其余产物不受影响）
 
 **解释器**：脚本 shebang 用 `/usr/bin/env` 解析 `Rscript` / `python3`，运行前请确保所用环境在 `PATH` 上（例如 `export PATH=/path/to/env/bin:$PATH`）；若不在 PATH 上，直接 `./<script>` 会报解释器未找到，此时用 `Rscript <script>.r …` / `/path/to/env/bin/python <script>.py …` 显式调用即可。
