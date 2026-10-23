@@ -16,7 +16,7 @@
 | `scRNA_gene_expr.r` | 独立脚本 | 目标基因在各细胞类型中的平均表达（CSV）+ 5 类图：Ridge / Violin / Feature / Dot / Heatmap | 已注释 rds → 表达量 CSV + 图 | `Images/gene_expr/` |
 | `scRNA_gene_DE.r` | 独立脚本 | 单个目标基因：样本 × 细胞类型平均表达表、按 celltype z-score 的热图、每细胞类型一张柱状图、以及样本级箱线图（Wilcoxon 检验 + 显著性横线，**每个点是一个样本而非细胞**） | 已注释 rds → CSV + 热图 / 柱状图 / 箱线图 | `Images/gene_DE/` |
 | `scRNA_composition_sccoda.py` | 独立脚本 | 用 **scCODA**（Dirichlet-Multinomial 贝叶斯模型）做细胞组成成分差异分析；`--deterministic` 可让 MCMC 逐字节可复现 | `.h5ad` / 样本 × 细胞类型计数表 / 每行一细胞的 obs 表 → 效应表 + 桑基图 / 箱线图 / 离散度 / 效应森林图 | `Images/composition_sccoda/` |
-| `sankey_composition.R` | 辅助脚本（**上一脚本必需**） | 用 `ggalluvial` 渲染组成桑基（冲积）图。由 `scRNA_composition_sccoda.py` 自动调用；**必须与它放在同一目录** | 组成比例 CSV → 桑基图 PNG/PDF | ↑ |
+| `sankey_composition.r` | 辅助脚本（**上一脚本必需**） | 用 `ggalluvial` 渲染组成桑基（冲积）图。由 `scRNA_composition_sccoda.py` 自动调用；**必须与它放在同一目录** | 组成比例 CSV → 桑基图 PNG/PDF | ↑ |
 
 ## 流程总览
 
@@ -37,7 +37,7 @@
                       └──▶ scRNA_gene_DE.r     样本 × 细胞类型表达
 
 独立脚本 —— 不参与主流程编号
-  scRNA_composition_sccoda.py   .h5ad / 计数表 → 组成成分差异分析（+ sankey_composition.R）
+  scRNA_composition_sccoda.py   .h5ad / 计数表 → 组成成分差异分析（+ sankey_composition.r）
 ```
 
 ## 特点
@@ -58,7 +58,7 @@
 - 批次整合与探索：`harmony`、`clustree`
 - 可选 Leiden 聚类：`reticulate`（脚本内部调用 `py_require("leidenalg")`）
 - `scRNA_gene_DE.r` 额外需要 `reshape2`
-- 桑基图（`sankey_composition.R`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
+- 桑基图（`sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
 
 **Python 侧**（`scRNA_composition_sccoda.py`）
 

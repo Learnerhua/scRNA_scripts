@@ -24,7 +24,7 @@
 | `scRNA_gene_DE.r` | 样本 × 细胞类型表达矩阵 + 热图 / 柱状图 / 箱线图 | 已注释 rds → 表 + 图 |
 | `scRNA_composition_sccoda.py` | 细胞组成成分差异分析（scCODA） | h5ad / 计数表 → 效应表 + 图 |
 
-> `sankey_composition.R` 不是独立调用的分析脚本，而是 `scRNA_composition_sccoda.py` 的**必需配套脚本** —— 后者用 R + `ggalluvial` 渲染细胞组成桑基图，由 py 自动调用（无需手动运行），因此该文件**必须与 `scRNA_composition_sccoda.py` 放在同一目录**。缺 R 或 `ggalluvial` 时仅桑基图跳过，其余产物不受影响。
+> `sankey_composition.r` 不是独立调用的分析脚本，而是 `scRNA_composition_sccoda.py` 的**必需配套脚本** —— 后者用 R + `ggalluvial` 渲染细胞组成桑基图，由 py 自动调用（无需手动运行），因此该文件**必须与 `scRNA_composition_sccoda.py` 放在同一目录**。缺 R 或 `ggalluvial` 时仅桑基图跳过，其余产物不受影响。
 
 使用约定：
 
@@ -644,7 +644,7 @@ scCODA 是基于 Dirichlet-Multinomial 模型的贝叶斯成分差异分析方�
 
 `<reference>` 取 `automatic`（默认）或某个 cell type 名称；`<ref_level>` 是该分组列的参考水平。
 
-**建议正式分析一律带上 `--deterministic`**——否则同样的命令重复运行会得到略有差异的结果（只有设了种子也不够，原因见下）；带上它可保证结果**逐位可复现**、报告引用的数字永远对得上，代价几乎为零。桑基图（Plot 1）由同目录的 `sankey_composition.R`（**本脚本的必需配套脚本**，须与 py 同目录）渲染，脚本会自动调用，无需手动运行。
+**建议正式分析一律带上 `--deterministic`**——否则同样的命令重复运行会得到略有差异的结果（只有设了种子也不够，原因见下）；带上它可保证结果**逐位可复现**、报告引用的数字永远对得上，代价几乎为零。桑基图（Plot 1）由同目录的 `sankey_composition.r`（**本脚本的必需配套脚本**，须与 py 同目录）渲染，脚本会自动调用，无需手动运行。
 
 ### 核心参数速查
 
@@ -684,7 +684,7 @@ scCODA 是基于 Dirichlet-Multinomial 模型的贝叶斯成分差异分析方�
 
 | 文件 | 说明 |
 |---|---|
-| `<前缀>composition_sankey.png/.pdf` | 各组细胞组成桑基（冲积）图。**对照组固定显示在上、处理组在下**；细胞类型按**全局丰度降序**排列（可用 `-ET` 把某类型钉到末尾）。由**必需配套脚本** `sankey_composition.R`（须与本 py 同目录）用 R + `ggalluvial` 渲染（需 Rscript 可用；可用 `-RS` 指定路径）|
+| `<前缀>composition_sankey.png/.pdf` | 各组细胞组成桑基（冲积）图。**对照组固定显示在上、处理组在下**；细胞类型按**全局丰度降序**排列（可用 `-ET` 把某类型钉到末尾）。由**必需配套脚本** `sankey_composition.r`（须与本 py 同目录）用 R + `ggalluvial` 渲染（需 Rscript 可用；可用 `-RS` 指定路径）|
 | `<前缀>composition_boxplot.png/.pdf` | 各细胞类型相对丰度箱线图（按组分面）|
 | `<前缀>composition_dispersion.png/.pdf` | 各细胞类型在样本间的相对丰度离散度——参考类型选择依据 |
 | `<前缀>composition_effects.png/.pdf` | 效应量森林图：log2FC + 95% HDI，红色 = 在 `--fdr` 下可信 |
@@ -756,7 +756,7 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 
 ### 已知坑
 
-- **桑基图（Plot 1）需要 R + `ggalluvial`**：组成桑基图由**必需配套脚本** `sankey_composition.R`（须与本 py 同目录）用 R 的 `ggalluvial` 渲染（不重新实现，以保证与原参考实现一致——纯 Python 复刻的流带轮廓明显不如原包）。运行环境需有 `Rscript` 与 `ggalluvial` 包；脚本按"`-RS` 显式路径 → PATH → 与本 Python 解释器同目录"的顺序自动查找。**若 R 或 `ggalluvial` 缺失，该图会跳过并在日志中说明（`Plot 1 skipped (...)`），其余产物不受影响。**
+- **桑基图（Plot 1）需要 R + `ggalluvial`**：组成桑基图由**必需配套脚本** `sankey_composition.r`（须与本 py 同目录）用 R 的 `ggalluvial` 渲染（不重新实现，以保证与原参考实现一致——纯 Python 复刻的流带轮廓明显不如原包）。运行环境需有 `Rscript` 与 `ggalluvial` 包；脚本按"`-RS` 显式路径 → PATH → 与本 Python 解释器同目录"的顺序自动查找。**若 R 或 `ggalluvial` 缺失，该图会跳过并在日志中说明（`Plot 1 skipped (...)`），其余产物不受影响。**
 - **h5ad 读取需 anndata 与 zarr 兼容**：`anndata < 0.12` 硬拒 zarr ≥3；`anndata ≥ 0.13` 要求 numpy ≥2.1。旧版环境中常见故障。
 - **效应图文件名固定为** `<prefix>composition_effects.png/.pdf`（不再把协变量水平拼进文件名；多协变量水平时后写的会覆盖前一个，如需区分请分别指定 `-P`）。
 - **导入 TensorFlow 较慢**：scCODA 依赖 tensorflow / tensorflow-probability，首次导入约 5–10 s（之后命中缓存）。
@@ -773,7 +773,7 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 - 批次整合与探索：`harmony`、`clustree`
 - Leiden 聚类（可选）：`reticulate`（脚本内部 `py_require("leidenalg")`）
 - `scRNA_gene_DE.r` 额外：`reshape2`
-- 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.R`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
+- 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
 
 **Python 侧**（`scRNA_composition_sccoda.py`）：
 

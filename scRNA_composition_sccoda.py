@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/oldhome/ouyjh/miniforge3/envs/old_base/bin/python
 """
 Single-cell compositional (differential abundance) analysis with scCODA.
 
@@ -208,7 +208,7 @@ def main():
         scCODA. Accepts an AnnData .h5ad file (only .obs is read), a sample x
         cell-type count table, or a per-cell obs table.
         Example:
-          scRNA_composition_sccoda.py -I input.h5ad -S sample \\
+          scRNA_composition_sccoda.py -I 05.seu_annotated.h5ad -S sample \\
               -CT celltype -GC group -O 08_composition -P 08.
         """
     )
@@ -254,11 +254,11 @@ def main():
                              "dispersion among those present in at least "
                              "--ref_absence_threshold (95 percent) of samples. "
                              "For small sample sizes (N < 8) it is RECOMMENDED to "
-                             "override this with an explicitly chosen stable, "
-                             "abundant cell type to avoid automatic selecting a low-abundance, low-power "
+                             "override this with a name such as 'T' or 'B' to "
+                             "avoid automatic selecting a low-abundance, low-power "
                              "cell type. See the 'Choosing the reference cell type' "
                              "section in the documentation for the full decision "
-                             "framework. Examples: 'celltypeA', 'celltypeB', 'automatic'.")
+                             "framework. Examples: 'T', 'B', 'Schwann', 'automatic'.")
     parser.add_argument("-RA", "--ref_absence_threshold", type=float, default=0.05,
                         help="Absence threshold used by the automatic reference "
                              "choice (default: 0.05)")
@@ -567,7 +567,7 @@ def main():
     # ------------------------------------------------------------------ #
     # Plot 1: composition sankey (group x cell type, alluvial)              #
     # ------------------------------------------------------------------ #
-    # Rendered by the companion R helper sankey_composition.R (same directory) with
+    # Rendered by the companion R helper sankey_composition.r (same directory) with
     # ggalluvial, so the alluvial look stays faithful to the reference
     # implementation.  Requires R + ggalluvial; the figure is skipped with a
     # clear message if either is unavailable.
@@ -606,7 +606,7 @@ def main():
             _prop = _prop.reset_index()
 
             r_helper = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "sankey_composition.R")
+                                    "sankey_composition.r")
             if not os.path.exists(r_helper):
                 raise FileNotFoundError("R helper not found: {}".format(r_helper))
 

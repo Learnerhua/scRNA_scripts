@@ -16,7 +16,7 @@ A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scR
 | `scRNA_gene_expr.r` | standalone | Average expression of target genes in every cell type (CSV) plus 5 plot types: Ridge / Violin / Feature / Dot / Heatmap | annotated rds → expression CSV + plots | `Images/gene_expr/` |
 | `scRNA_gene_DE.r` | standalone | For one target gene: sample × cell-type mean-expression table, per-celltype z-scored heatmap, one barplot per cell type, and sample-level boxplots with Wilcoxon test + significance bars (each point is a sample, not a cell) | annotated rds → CSV + heatmap / bar / box plots | `Images/gene_DE/` |
 | `scRNA_composition_sccoda.py` | standalone | Compositional differential-abundance analysis with **scCODA** (Dirichlet-multinomial Bayesian model); `--deterministic` gives bit-reproducible MCMC | `.h5ad` / sample × cell-type count table / per-cell obs table → effect tables + sankey / boxplot / dispersion / forest plots | `Images/composition_sccoda/` |
-| `sankey_composition.R` | helper (**required** by the script above) | Renders the composition sankey (alluvial) plot with `ggalluvial`. Called automatically by `scRNA_composition_sccoda.py`; **must live in the same directory** as it | composition CSV → sankey PNG/PDF | ↑ |
+| `sankey_composition.r` | helper (**required** by the script above) | Renders the composition sankey (alluvial) plot with `ggalluvial`. Called automatically by `scRNA_composition_sccoda.py`; **must live in the same directory** as it | composition CSV → sankey PNG/PDF | ↑ |
 
 ## Pipeline overview
 
@@ -36,7 +36,7 @@ main pipeline — scripts carry the stepN prefix and are chained through rds fil
                       └──▶ scRNA_gene_DE.r     per-sample × per-celltype expression
 
 standalone — independent of the pipeline numbering
-  scRNA_composition_sccoda.py   .h5ad / count table → compositional DA (+ sankey_composition.R)
+  scRNA_composition_sccoda.py   .h5ad / count table → compositional DA (+ sankey_composition.r)
 ```
 
 ## Highlights
@@ -57,7 +57,7 @@ standalone — independent of the pipeline numbering
 - integration / exploration: `harmony`, `clustree`
 - optional Leiden clustering: `reticulate` (the scripts call `py_require("leidenalg")`)
 - `scRNA_gene_DE.r` also uses `reshape2`
-- sankey (`sankey_composition.R`): `ggalluvial`, `RColorBrewer`, `scales`, `ggplot2`, `dplyr`, `tidyr`
+- sankey (`sankey_composition.r`): `ggalluvial`, `RColorBrewer`, `scales`, `ggplot2`, `dplyr`, `tidyr`
 
 **Python side** (`scRNA_composition_sccoda.py`)
 

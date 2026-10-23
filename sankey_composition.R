@@ -7,7 +7,7 @@
 # implementation (ggalluvial) instead of being re-implemented in Python.
 #
 # Usage:
-#   Rscript sankey_composition.R <in_csv> <out_png> <out_pdf> <width> <height> \
+#   Rscript sankey_composition.r <in_csv> <out_png> <out_pdf> <width> <height> \
 #           [<group_order>]
 #
 # <in_csv>  : CSV whose first column is the group and whose remaining columns
@@ -22,6 +22,7 @@
 #                with rev(group_order).)
 #
 # Requires: ggplot2, dplyr, tidyr, ggalluvial, RColorBrewer, scales
+# Copyright 2026
 # ---------------------------------------------------------------------------
 
 suppressPackageStartupMessages({
@@ -31,7 +32,7 @@ suppressPackageStartupMessages({
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 5) {
-  stop("usage: sankey_composition.R <in_csv> <out_png> <out_pdf> <width> <height> [group_order]")
+  stop("usage: sankey_composition.r <in_csv> <out_png> <out_pdf> <width> <height> [group_order]")
 }
 in_csv  <- args[1]
 out_png <- args[2]
