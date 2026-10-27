@@ -12,6 +12,7 @@
 | `scRNA_h5ad2rds.r` | 独立（格式转换） | 批量 `.h5ad` → Seurat `.rds`；两条后端（默认纯 R 的 `anndataR`，或经 reticulate 的 `sceasy`）。输入须带 `layers["counts"]` | `.h5ad`（目录 / 单文件）→ `.rds` | — |
 | `scRNA_h5ad_seurat_convert.r` | 独立（格式转换） | 单文件双向转换，按扩展名判方向：`.h5ad` → `.rds`、`.rds` → `.h5ad`（先转 factor 为 character；assay / 层 / 压缩可选） | `.h5ad` ⇄ `.rds` | — |
 | `scRNA_mtx2rds.r` | 独立（数据准备） | 把 **Broad Single Cell Portal** 下载的数据组装成 Seurat 对象：稠密矩阵（`-E`）或 `.mtx` + 细胞/基因文件（`-M/-C/-G`），元数据必填（`-m`，细胞名列默认 `NAME`，首行 `TYPE` 自动丢弃）。基因名 `_`→`-` 并 `make.unique`；非整数输入只保留 `data` 层 | 矩阵 + 元数据 → `seurat.rds` | — |
+| `scRNA_subcelltype_clustering.r` | 独立（细分亚型） | 对已注释对象里的每个细胞类型**单独**细分：逐类型重跑降维（归一化 → HVG → PCA → Harmony）+ 多分辨率 clustree，再按你记录的每类型分辨率定亚型、跑亚型 DE（marker / top10 / dotplot），最后把 `sub_celltype` 标签回写到原对象 | 注释 rds + 分辨率表 → 亚型 rds + 各亚型 DE | `Images/subcelltype_clustering/` |
 | `scRNA_QC_step1.r` | 主流程 `step1` | 每样本独立 QC（阈值取自该样本自身的 nFeature_RNA / nCount_RNA 分位数，加 percent.mt 硬上限，可选 percent.HB 红细胞过滤），QC 通过后合并；基因级 `min.cells` 过滤在**合并之后**统一执行 | 10x 目录 / `.h5` 列表（CSV）→ 合并 Seurat 对象（仅 counts）+ QC 小提琴图/散点图 | `Images/01_QC/` |
 | `scRNA_dedoublets_step2.r` | 主流程 `step2` | 每样本 **scDblFinder** 去双细胞；可选 **DecontX** 去环境 RNA（同样按样本独立跑） | 合并 rds → 仅含单细胞的 rds（`seu_clean.rds`） | `Images/02_deContamination/` |
 | `scRNA_Nor_harmony_step3.r` | 主流程 `step3` | NormalizeData（LogNormalize）→ FindVariableFeatures（vst）→ ScaleData → RunPCA → **Harmony** 批次校正 | 干净 rds → 归一化 + 整合后的 rds（`seu_harmony.rds`） | `Images/03_Nor_Harmony/` |
@@ -71,6 +72,7 @@
 - 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
 - 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认后端）；可选 `sceasy`（经 reticulate，其 Python 环境需 `numpy` + `anndata`）
 - 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
+- 亚型聚类（`scRNA_subcelltype_clustering.r`）：`clustree`、`harmony`、`reticulate`（Leiden 需 `leidenalg`）、`patchwork`
 
 **Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）
 
@@ -91,6 +93,9 @@
 
 # 可选：Broad Single Cell Portal 导出数据（稠密矩阵 + 元数据）
 ./scRNA_mtx2rds.r                -E exprMatrix.tsv.gz -m metadata.tsv -CC NAME -P 00. -O 00_rds
+
+# 可选：对已注释对象逐细胞类型做亚型聚类（阶段 1 → clustree）
+./scRNA_subcelltype_clustering.r -I 05_annotation/05.seu_annotated.rds -AC celltype -P 06. -O 06_subtype
 
 # 主流程
 ./scRNA_QC_step1.r          -I input_list.csv -DT 10X -P 01. -O 01_QC
@@ -134,11 +139,14 @@ path,sample,group
 - Harmony 的批次变量必须用样本/供体列，**不要**用生物学分组列（step3 会对 `-BC group` 直接报错拦截，避免把分组差异校正掉）。
 - step5 不重算 DE，直接复用 step4 产出的 `clusters_DE/` 表。
 - 从 **Broad Single Cell Portal** 下载数据时，用 `scRNA_mtx2rds.r` 直接建对象（细胞名列默认 `NAME`，首行 `TYPE` 自动跳过）。
+- `scRNA_subcelltype_clustering.r` 用于把已注释对象再细分：阶段 1 为每个细胞类型出 clustree，阶段 2 按你记录的每类型分辨率（CSV：`celltype`、`resolution`）定亚型并跑亚型 DE。
 - 从 `.h5ad` 起步时先跑 `scRNA_spRNA_h5ad_preprocess.py`：`scRNA_h5ad2rds.r` 需要 `layers["counts"]` 层；若转换出的 Seurat 对象只有名为 `X` 的层，主流程 step1（按 `layer = "counts"` 取计数）无法使用。
 
 ## 示例可视化输出
 
-`Images/` 目录收录了各绘图脚本的示例输出（每张图 PNG + PDF 同名成对），子目录与产出图的脚本一一对应（数据准备 / 格式转换脚本不产图），详见上表“示例图”一列。示例图均由脚本自身产出，用于展示输出形式与排版。
+`Images/` 目录收录了各绘图脚本的示例输出，子目录与产出图的脚本一一对应（数据准备 / 格式转换脚本不产图），详见上表“示例图”一列。示例图均由脚本自身产出，用于展示输出形式与排版。
+
+**示例图只保留 PNG**：脚本运行时同一张图会同时输出 `.png` 与 `.pdf` 两个文件，但示例集中**只保留 PNG**，同名 PDF 已全部删除（既省体积、也便于网页直接浏览）。因此各章「输出」小节里写成 `.png/.pdf` 的文件，在 `Images/` 中只能找到 `.png`；需要 PDF 时用相应脚本重新跑一次即可。
 
 ## 文档
 

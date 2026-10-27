@@ -12,6 +12,7 @@ A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scR
 | `scRNA_h5ad2rds.r` | standalone (conversion) | Batch `.h5ad` → Seurat `.rds`; two backends (`anndataR`, pure R, default; `sceasy` via reticulate). The input must carry `layers["counts"]` | `.h5ad` (directory / single file) → `.rds` | — |
 | `scRNA_h5ad_seurat_convert.r` | standalone (conversion) | Single-file bidirectional conversion, direction chosen from the extension: `.h5ad` → `.rds` and `.rds` → `.h5ad` (factors → character first; assay / layer / compression selectable) | `.h5ad` ⇄ `.rds` | — |
 | `scRNA_mtx2rds.r` | standalone (data prep) | Builds a Seurat object from **Broad Single Cell Portal** exports: dense matrix (`-E`) or `.mtx` + cell/gene files (`-M/-C/-G`), plus a required metadata table (`-m`, cell-name column defaults to `NAME`, a leading `TYPE` row is dropped). Genes get `_`→`-` and `make.unique`; non-integer input keeps only the `data` layer | matrix + metadata → `seurat.rds` | — |
+| `scRNA_subcelltype_clustering.r` | standalone (refinement) | Sub-clusters every cell type of an annotated object separately: per-cell-type re-embedding (normalize → HVG → PCA → Harmony) plus a multi-resolution clustree, then re-clusters at the resolution you recorded per cell type, runs sub-celltype DE (markers, top-10, dotplots) and writes the `sub_celltype` labels back to the original object | annotated rds + resolution table → sub-celltype rds + per-subtype DE | `Images/subcelltype_clustering/` |
 | `scRNA_QC_step1.r` | pipeline `step1` | Per-sample QC with sample-specific thresholds (quantiles of nFeature_RNA / nCount_RNA + hard cap on percent.mt, optional percent.HB for red-blood-cell removal), then merge QC-passing samples; gene-level `min.cells` filtering is applied **after** merging | 10x directory / `.h5` list (CSV) → merged Seurat object (counts only) + QC violin/scatter plots | `Images/01_QC/` |
 | `scRNA_dedoublets_step2.r` | pipeline `step2` | Per-sample doublet detection with **scDblFinder**; optional **DecontX** ambient-RNA decontamination (also per sample) | merged rds → singlet-only rds (`seu_clean.rds`) | `Images/02_deContamination/` |
 | `scRNA_Nor_harmony_step3.r` | pipeline `step3` | NormalizeData (LogNormalize) → FindVariableFeatures (vst) → ScaleData → RunPCA → **Harmony** batch correction | clean rds → normalized + integrated rds (`seu_harmony.rds`) | `Images/03_Nor_Harmony/` |
@@ -70,6 +71,7 @@ standalone — independent of the pipeline numbering
 - sankey (`sankey_composition.r`): `ggalluvial`, `RColorBrewer`, `scales`, `ggplot2`, `dplyr`, `tidyr`
 - format conversion (`scRNA_h5ad2rds.r`, `scRNA_h5ad_seurat_convert.r`): `anndataR` (default backend); optional `sceasy` (via reticulate, whose Python environment needs `numpy` + `anndata`)
 - matrix import (`scRNA_mtx2rds.r`): `Matrix` (`readMM`), `data.table` (`fread`)
+- sub-celltype clustering (`scRNA_subcelltype_clustering.r`): `clustree`, `harmony`, `reticulate` (`leidenalg` for Leiden), `patchwork`
 
 **Python side** (`scRNA_spRNA_h5ad_preprocess.py`, `scRNA_composition_sccoda.py`)
 
@@ -90,6 +92,9 @@ standalone — independent of the pipeline numbering
 
 # optional: Broad Single Cell Portal export (dense matrix + metadata)
 ./scRNA_mtx2rds.r                -E exprMatrix.tsv.gz -m metadata.tsv -CC NAME -P 00. -O 00_rds
+
+# optional: sub-cluster each cell type of an annotated object (stage 1 -> clustree)
+./scRNA_subcelltype_clustering.r -I 05_annotation/05.seu_annotated.rds -AC celltype -P 06. -O 06_subtype
 
 # main pipeline
 ./scRNA_QC_step1.r          -I input_list.csv -DT 10X -P 01. -O 01_QC
@@ -133,11 +138,14 @@ path,sample,group
 - For Harmony, the batch variable must be the sample/donor column — never the biological group column (step3 rejects `-BC group` so the group effect is not regressed out).
 - `step5` does not recompute DE; it reuses the `clusters_DE/` tables produced by `step4`.
 - When starting from a **Broad Single Cell Portal** export, `scRNA_mtx2rds.r` assembles the Seurat object directly (cell-name column defaults to `NAME`; a leading `TYPE` row is skipped).
+- `scRNA_subcelltype_clustering.r` refines an annotated object: stage 1 writes one clustree per cell type, stage 2 applies the resolution you recorded per cell type (CSV: `celltype`, `resolution`) and runs sub-celltype DE.
 - When starting from `.h5ad`, run `scRNA_spRNA_h5ad_preprocess.py` first: `scRNA_h5ad2rds.r` needs a `layers["counts"]` layer, and a Seurat object whose only layer is named `X` cannot be used by the pipeline (step1 reads `layer = "counts"`).
 
 ## Visualization examples
 
-The `Images/` directory contains example outputs for the plotting scripts (PNG + PDF pairs), one subdirectory per script that produces figures — see the "Example outputs" column above. All figures are produced by the scripts themselves and are meant to show the output format and layout.
+The `Images/` directory contains example outputs for the plotting scripts, one subdirectory per script that produces figures — see the "Example outputs" column above. All figures are produced by the scripts themselves and are meant to show the output format and layout.
+
+**PNG only.** Each script writes the same figure twice (`.png` and `.pdf`), but the example set keeps **only the PNG** and the matching PDFs have been removed, to keep the repository light and browser-friendly. So although the per-script output tables below list `.png/.pdf`, you will find just the `.png` in `Images/`; re-run the script if you need the PDF.
 
 ## Documentation
 

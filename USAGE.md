@@ -24,6 +24,7 @@
 | `scRNA_h5ad2rds.r` | 批量 h5ad → Seurat rds（`anndataR` / `sceasy` 两条路径） | h5ad（目录 / 单文件）→ rds |
 | `scRNA_h5ad_seurat_convert.r` | 单文件双向格式转换（按扩展名自动判方向） | h5ad ⇄ rds |
 | `scRNA_mtx2rds.r` | 把 Broad Single Cell Portal 下载的矩阵 + 元数据组装成 Seurat 对象（稠密矩阵或稀疏三元组两种输入） | 矩阵文件（+ metadata）→ `seurat.rds` |
+| `scRNA_subcelltype_clustering.r` | 对已注释对象按细胞类型逐个做亚型聚类（多分辨率 clustree → 按指定分辨率定亚型 → 亚型 DE），并把亚型标签回写到原对象 | 注释 rds + 分辨率表 → 亚型 rds + 各亚型 DE |
 | `scRNA_gene_expr.r` | 目标基因跨细胞类型表达可视化 | 已注释 rds → 均值 CSV + 5 类图 |
 | `scRNA_gene_DE.r` | 样本 × 细胞类型表达矩阵 + 热图 / 柱状图 / 箱线图 | 已注释 rds → 表 + 图 |
 | `scRNA_composition_sccoda.py` | 细胞组成成分差异分析（scCODA） | h5ad / 计数表 → 效应表 + 图 |
@@ -35,12 +36,15 @@
 - 主流程各步以文件衔接，中间产物可单独复用；建议每步输出到独立目录（如 `01_QC/`、`02_deContamination/`），输出前缀（`01.` `02.` …）与步骤号对应，便于追溯。
 - 数据准备/格式转换类脚本（`scRNA_spRNA_h5ad_preprocess.py` → `scRNA_h5ad2rds.r`）是从 h5ad 起步时的前置链：先清洗计数矩阵，再转成 Seurat rds，之后即可接主流程 step1；`scRNA_h5ad_seurat_convert.r` 负责单文件双向互转（含 rds → h5ad 导出）。
 - 从 Broad Single Cell Portal（singlecell.broadinstitute.org）下载的数据可用 `scRNA_mtx2rds.r` 直接建对象：稠密矩阵走 `-E`，稀疏三元组走 `-M/-C/-G`，元数据里细胞名列用 `-CC` 指定（SCP 导出默认列名就是 `NAME`）。
+- 注释完成后若要对每个细胞类型再细分亚型，用 `scRNA_subcelltype_clustering.r`：它按 `-AC` 指定的细胞类型逐个重跑降维与聚类，先出多分辨率 clustree 供人工选分辨率，再按 `-Res` 指定的「细胞类型 → 分辨率」表定亚型、跑亚型 DE，最后把 `sub_celltype` 标签回写到原对象。
 - 独立脚本不依赖主流程的步骤顺序：`scRNA_gene_expr.r`、`scRNA_gene_DE.r` 需要一个含 celltype 列的已注释 Seurat 对象（典型来源是 step5 的 `seu_annotated.rds`）；`scRNA_composition_sccoda.py` 直接读 h5ad 或样本 × 细胞类型计数表，与主流程无关。
 - 脚本会识别已存在的关键产物作为缓存（通常只重画图、不重算），强制重跑时删除对应 rds 即可。
 
 ## 可视化输出示例（`Images/`）
 
-本目录下的 `Images/` 存放各脚本的示例可视化输出（每张图 PNG + PDF 同名成对），子目录与产出图的脚本一一对应（数据准备 / 格式转换类脚本不产图，因此没有对应子目录）：
+本目录下的 `Images/` 存放各脚本的示例可视化输出，子目录与产出图的脚本一一对应（数据准备 / 格式转换类脚本不产图，因此没有对应子目录）。
+
+**示例图只保留 PNG**：脚本运行时同一张图会同时输出 `.png` 与 `.pdf` 两个文件，但 `Images/` 中**只保留 PNG**，同名 PDF 已全部删除（既省体积、也便于网页直接浏览）。因此下表各脚本「输出」小节里写成 `.png/.pdf` 的文件，在 `Images/` 中只能找到 `.png`；需要 PDF 时用相应脚本重新跑一次即可。
 
 | 子目录 | 对应脚本 | 内容 |
 |---|---|---|
@@ -52,6 +56,7 @@
 | `Images/gene_expr/` | `scRNA_gene_expr.r` | Ridge / Violin / Feature / Dot / Heatmap |
 | `Images/gene_DE/` | `scRNA_gene_DE.r` | 热图、柱状图、箱线图 |
 | `Images/composition_sccoda/` | `scRNA_composition_sccoda.py` | 组成桑基、相对丰度箱线图、离散度、效应森林图 |
+| `Images/subcelltype_clustering/` | `scRNA_subcelltype_clustering.r` | 每个细胞类型的 clustree、亚型 UMAP，以及各亚型 DE 目录下的 marker dotplot |
 
 各章「输出」小节末尾给出对应的示例目录。示例图仅用于展示输出形式与排版，其文件名与各章输出的 `<前缀><文件名>` 规则一致。
 
@@ -980,6 +985,88 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 
 ---
 
+## 13 scRNA_subcelltype_clustering.r（独立脚本）—— 细胞类型内亚型聚类
+
+### 功能
+
+在**已完成细胞类型注释**的对象上，对每个细胞类型**单独**再做一轮亚型细分：
+
+1. **逐细胞类型重跑降维与聚类**（探索阶段）：对每个细胞类型取子集 → `NormalizeData` → `FindVariableFeatures(vst, 2000)` → `ScaleData` → `RunPCA` → `RunHarmony(group.by.vars = "orig.ident")` → `FindNeighbors` → `FindClusters`（Louvain 扫 0–1、Leiden 扫 0.1–1，步长 0.1）→ 输出该细胞类型的 **clustree** 供人工挑选分辨率。同时保存 `<celltype>_clustering.rds`（已存在则跳过该细胞类型）。
+2. **按指定分辨率定亚型并做 DE**（应用阶段）：读取 `-Res` 指定的「细胞类型 → 分辨率」CSV，对每个细胞类型用该分辨率重新 `FindClusters`，生成 `sub_celltype`（形如 `<celltype>_<cluster id>`），跑 `FindAllMarkers`（`only.pos=TRUE, min.pct=0.1, logfc.threshold=0.25`），导出全部 marker、top10 marker 与每亚型 dotplot。
+3. **回写原对象**：把各亚型标签合并写回原始 Seurat 对象的 `sub_celltype` 列，输出整体 UMAP 与 `<前缀>subcelltype.rds`。
+
+### 输入
+
+- `-I` 已注释的 Seurat rds（需含细胞类型列，且带 `umap` reduction）
+- `-AC` 该细胞类型列名（必填）
+- `-Res` 分辨率表 CSV（**第二阶段必填**），两列：`celltype`、`resolution`
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | （必填） | 注释后的 Seurat rds |
+| `-AC, --annotation_column` | （必填） | metadata 中细胞类型列名 |
+| `-Res, --resolution_file` | 无 | 分辨率表 CSV（`celltype`, `resolution` 两列）|
+| `-PC` | 30 | PCA 维数 |
+| `-CA, --cluster_algorithm` | Louvain | `Louvain` 或 `Leiden`（Leiden 需 `-P_env` 或已装 `leidenalg`）|
+| `-A, --assay` | RNA | 表达所在 assay |
+| `-P_env` | 无 | Leiden 用的 Python 环境路径 |
+| `-T, --threads` | 10 | 线程数（Harmony 与 future）|
+| `-Red, --reduction` | harmony | 聚类所用降维（`pca` 或 `harmony`）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 阶段 1：逐细胞类型出 clustree，人工挑分辨率
+./scRNA_subcelltype_clustering.r -I 05_annotation/05.seu_annotated.rds -AC celltype     -CA Leiden -T 12 -P 06. -O 06_subtype
+
+# 阶段 2：填好分辨率表后定亚型、跑 DE
+./scRNA_subcelltype_clustering.r -I 05_annotation/05.seu_annotated.rds -AC celltype     -Res resolution_recording.csv -CA Leiden -T 12 -P 06. -O 06_subtype
+```
+
+分辨率表格式：
+
+```csv
+celltype,resolution
+celltypeA,0.4
+celltypeB,0.8
+```
+
+### 输出
+
+输出目录 `-O` 下（`<ct>` 为细胞类型名，空格会替换为下划线）：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀><ct>_clustering.rds` | 该细胞类型的多分辨率聚类对象（阶段 1 产物，已存在则跳过）|
+| `<前缀><ct>_clustree.png/.pdf` | 该细胞类型的多分辨率聚类树 |
+| `<前缀><ct>_res<res>_umap.png/.pdf` | 该细胞类型在指定分辨率下的 UMAP |
+| `<前缀><ct>_clustering_res<res>_results.rds` | 该细胞类型定亚型后的对象（含 `sub_celltype`）|
+| `<ct>_res<res>_DE/<前缀><ct>_markers.csv` | 该细胞类型内各亚型的全部 marker |
+| `<ct>_res<res>_DE/<前缀><ct>_top10_markers.csv` | 每亚型 top 10 marker（`p_val_adj<0.05` 且 `pct.1>0.3`）|
+| `<ct>_res<res>_DE/<前缀><亚型名>_dotplot.png/.pdf` | 每亚型一张 top10 marker dotplot |
+| `<前缀>subcelltype_umap.png/.pdf` | 全对象按 `sub_celltype` 着色的 UMAP |
+| `<前缀>subcelltype.rds` | **主输出**：原始对象 + `sub_celltype` 列 |
+
+示例输出：`Images/subcelltype_clustering/`（示例为单个样本的完整一轮：17 个细胞类型的 clustree / 亚型 UMAP + 各亚型 dotplot）。
+
+### 注意事项
+
+- **子集用 `celltype == ct` 硬编码**（第 196 行）：`-AC` 指定的列名**不会**被使用，实际取的是 `celltype` 列。若你的对象里细胞类型列不叫 `celltype`，需先改列名或改这一行。
+- **分辨率表按替换后的名字匹配**：表里的 `celltype` 值要与**空格换成下划线后**的名字一致（如 `T cell` 写作 `T_cell`）。
+- **两阶段是分开跑的**：阶段 1 只需 `-AC`；阶段 2 必须给 `-Res`，否则脚本报 `Please provide a valid resolution file using the -Res parameter.` 后中止。阶段 1 的 `<ct>_clustering.rds` 是阶段 2 的输入——若删掉它，阶段 2 会因找不到文件报错。
+- **细胞类型名含空格会被替换**：文件名前缀里的空格统一换成 `_`。
+- Harmony 固定按 `orig.ident` 分组校正，与 `-Red` 无关；`-Red` 只影响 `FindNeighbors` 用哪个 reduction。
+- Leiden 分两支：给了 `-P_env` 就 `use_python()` 并检查 `leidenalg`；没给则 `reticulate::py_require("leidenalg")` 现场装（需可用的 Python + 编译工具）。
+- 亚型 DE 的 `FindAllMarkers` 是耗时大头；亚型多时逐个 dotplot 渲染也较慢。
+- `subset()` 保留原对象的 `umap` reduction（继承自原对象），因此第 2 阶段的 UMAP 与原注释 UMAP 同一坐标系。
+
+
+---
+
 ## 附录：环境与依赖
 
 **R 侧**（主流程各步与独立 R 脚本）：
@@ -993,6 +1080,7 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 - 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
 - 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认路径）；可选 `sceasy`（经 reticulate，其配套 Python 环境需预装 `numpy` + `anndata`）
 - 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
+- 亚型聚类（`scRNA_subcelltype_clustering.r`）：`clustree`、`harmony`、`reticulate`（Leiden 时需 `leidenalg`）、`patchwork`
 
 **Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）：
 
