@@ -13,6 +13,7 @@
 | `scRNA_h5ad_seurat_convert.r` | 独立（格式转换） | 单文件双向转换，按扩展名判方向：`.h5ad` → `.rds`、`.rds` → `.h5ad`（先转 factor 为 character；assay / 层 / 压缩可选） | `.h5ad` ⇄ `.rds` | — |
 | `scRNA_mtx2rds.r` | 独立（数据准备） | 把 **Broad Single Cell Portal** 下载的数据组装成 Seurat 对象：稠密矩阵（`-E`）或 `.mtx` + 细胞/基因文件（`-M/-C/-G`），元数据必填（`-m`，细胞名列默认 `NAME`，首行 `TYPE` 自动丢弃）。基因名 `_`→`-` 并 `make.unique`；非整数输入只保留 `data` 层 | 矩阵 + 元数据 → `seurat.rds` | — |
 | `scRNA_subcelltype_clustering.r` | 独立（细分亚型） | 对已注释对象里的每个细胞类型**单独**细分：逐类型重跑降维（归一化 → HVG → PCA → Harmony）+ 多分辨率 clustree，再按你记录的每类型分辨率定亚型、跑亚型 DE（marker / top10 / dotplot），最后把 `sub_celltype` 标签回写到原对象 | 注释 rds + 分辨率表 → 亚型 rds + 各亚型 DE | `Images/subcelltype_clustering/` |
+| `scRNA_pseudobulk_DE.r` | 独立（差异统计） | **在每种细胞类型内部，找出两组之间差异表达的基因。** 按「细胞类型 × 样本」把原始 counts 求和，用 DESeq2 在**样本层面**比较 `-G1` vs `-G2`（每个细胞类型单独检验），结果可读作「在这类细胞里，这些基因有差异」；单元细胞数不足或每组样本数不足的类型自动跳过。输出 DE 长表 + 单元溯源表，并画火山图 | 已注释 rds（需 counts 层）→ DE csv + 火山图 | `Images/pseudobulk_DE/` |
 | `scRNA_QC_step1.r` | 主流程 `step1` | 每样本独立 QC（阈值取自该样本自身的 nFeature_RNA / nCount_RNA 分位数，加 percent.mt 硬上限，可选 percent.HB 红细胞过滤），QC 通过后合并；基因级 `min.cells` 过滤在**合并之后**统一执行 | 10x 目录 / `.h5` 列表（CSV）→ 合并 Seurat 对象（仅 counts）+ QC 小提琴图/散点图 | `Images/01_QC/` |
 | `scRNA_dedoublets_step2.r` | 主流程 `step2` | 每样本 **scDblFinder** 去双细胞；可选 **DecontX** 去环境 RNA（同样按样本独立跑） | 合并 rds → 仅含单细胞的 rds（`seu_clean.rds`） | `Images/02_deContamination/` |
 | `scRNA_Nor_harmony_step3.r` | 主流程 `step3` | NormalizeData（LogNormalize）→ FindVariableFeatures（vst）→ ScaleData → RunPCA → **Harmony** 批次校正 | 干净 rds → 归一化 + 整合后的 rds（`seu_harmony.rds`） | `Images/03_Nor_Harmony/` |
@@ -21,6 +22,12 @@
 | `scRNA_gene_expr.r` | 独立脚本 | 目标基因在各细胞类型中的平均表达（CSV）+ 5 类图：Ridge / Violin / Feature / Dot / Heatmap | 已注释 rds → 表达量 CSV + 图 | `Images/gene_expr/` |
 | `scRNA_gene_DE.r` | 独立脚本 | 单个目标基因：样本 × 细胞类型平均表达表、按 celltype z-score 的热图、每细胞类型一张柱状图、以及样本级箱线图（Wilcoxon 检验 + 显著性横线，**每个点是一个样本而非细胞**） | 已注释 rds → CSV + 热图 / 柱状图 / 箱线图 | `Images/gene_DE/` |
 | `scRNA_composition_sccoda.py` | 独立脚本 | 用 **scCODA**（Dirichlet-Multinomial 贝叶斯模型）做细胞组成成分差异分析；`--deterministic` 可让 MCMC 逐字节可复现 | `.h5ad` / 样本 × 细胞类型计数表 / 每行一细胞的 obs 表 → 效应表 + 桑基图 / 箱线图 / 离散度 / 效应森林图 | `Images/composition_sccoda/` |
+| `scRNA_spRNA_cellPro.r` | 独立（组成统计） | **每个样本里各种细胞类型各占多少？** 出样本级/组级的计数与占比表、100% 堆叠柱状图、组→细胞类型桑基图，并逐细胞类型比较两组占比（Wilcoxon，**每个点是一个样本**）；可再按亚型重复该比较 | 注释 rds → 占比表 + 柱状图 + 桑基图 + 占比比较图 | `Images/cellPro/` |
+| `scRNA_SingleR.r` | 独立（自动注释） | **用参考数据集自动推断细胞类型名称**：把查询对象的每个聚类与参考数据比对（`-S human`/`-S mouse` 用 celldex 内置参考，或 `-RDS`/`-RD` 用自己的参考），输出 cluster→cell type 映射并写回对象，同时画得分热图与按推断标签着色的 UMAP | 已聚类 rds（含 `seurat_clusters`）+ 参考数据 → 映射 csv + 注释 rds + 图 | `Images/SingleR/` |
+| `scRNA_spRNA_enrichment.r` | 独立（通路富集） | **把差异基因翻译成通路层面的结论**：逐细胞类型做 GO/KEGG 富集（以该类型自身检出的基因为背景）与 GSEA（全部基因按 log2FC 排序），输出各通路的 p/q 值、NES、dotplot 与 barplot。本脚本只准备输入文件，富集计算由外部命令 `enrichment_analysis` 执行 | 注释 rds + DE 结果 csv → 富集表 + 图 | `Images/enrichment/` |
+| `scRNA_GSVA_enrichment.r` | 独立（通路活性） | **不依赖差异分析结果，比较两组之间的通路活性差异**：按「样本 × 细胞类型」聚合 counts，归一化为 log2(CPM+1)，用 GSVA 给每条通路打分（GO:BP、KEGG MEDICUS、REACTOME 三套基因集），再用 limma 比较两组，并画逐细胞类型的通路热图（对照组在左） | 注释 rds → 通路分数表 + 通路差异表 + 热图 | `Images/GSVA_enrichment/` |
+| `scRNA_genesetScore.r` | 独立（基因集打分） | **给自己指定的基因集打分**：读取每行一个基因符号的文本文件，用四种方式打分——细胞类型层面的 GSVA 与 ssGSEA、单细胞层面的 AddModuleScore 与 AUCell——并画出细胞类型柱状图与单细胞 UMAP 特征图。适合回答「这个基因集在哪些细胞类型里更活跃」 | 注释 rds + 基因集文件 → 分数表 + 4 类图 | `Images/genesetScore/` |
+| `enrichment_analysis.r` | 辅助脚本（**上一脚本必需**） | 用 clusterProfiler 执行实际的 GO/KEGG 富集与 GSEA：输入目标基因列表（`-G`）与可选背景基因集（`-E`），或输入全基因排序表做 GSEA（`-GSEA` + `-GM`），输出富集表、dotplot 与 barplot。也可单独用于 bulk RNA | 基因列表 / 排序表 → 富集表 + 图 | — |
 | `sankey_composition.r` | 辅助脚本（**上一脚本必需**） | 用 `ggalluvial` 渲染组成桑基（冲积）图。由 `scRNA_composition_sccoda.py` 自动调用；**必须与它放在同一目录** | 组成比例 CSV → 桑基图 PNG/PDF | ↑ |
 
 ## 流程总览
@@ -73,6 +80,12 @@
 - 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认后端）；可选 `sceasy`（经 reticulate，其 Python 环境需 `numpy` + `anndata`）
 - 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
 - 亚型聚类（`scRNA_subcelltype_clustering.r`）：`clustree`、`harmony`、`reticulate`（Leiden 需 `leidenalg`）、`patchwork`
+- pseudobulk 差异表达（`scRNA_pseudobulk_DE.r`）：`DESeq2`（Bioconductor）、`Seurat`、`Matrix`、`tidyverse`、`ggrepel`、`RColorBrewer`、`scales`；细胞类型 > 66 时另需 `viridis`
+- 细胞比例分析（`scRNA_spRNA_cellPro.r`）：`ggalluvial`（桑基图）、`ggpubr`（显著性标注）、`patchwork`（亚型图拼接）、`tidyverse`、`Seurat`、`RColorBrewer`、`scales`
+- 自动注释（`scRNA_SingleR.r`）：`SingleR`、`SingleCellExperiment`、`scater`、`celldex`（内置 human/mouse 参考）、`Seurat`、`tidyverse`
+- 通路富集（`scRNA_spRNA_enrichment.r` + 配套 `enrichment_analysis.r`）：主脚本只准备输入文件，富集由配套脚本执行，需 `clusterProfiler`、`enrichplot`、`GseaVis` 与 `org.Hs.eg.db`/`org.Mm.eg.db`
+- 通路活性打分（`scRNA_GSVA_enrichment.r`）：`GSVA`、`msigdbr`（GO:BP / KEGG MEDICUS / REACTOME 基因集）、`limma`（组间比较）、`ComplexHeatmap`（热图）、`Seurat`、`tidyverse`
+- 自定义基因集打分（`scRNA_genesetScore.r`）：`GSVA`（GSVA + ssGSEA）、`AUCell`、`Seurat`（AddModuleScore）、`tidyverse`
 
 **Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）
 
@@ -96,6 +109,24 @@
 
 # 可选：对已注释对象逐细胞类型做亚型聚类（阶段 1 → clustree）
 ./scRNA_subcelltype_clustering.r -I 05_annotation/05.seu_annotated.rds -AC celltype -P 06. -O 06_subtype
+
+# 可选：每种细胞类型内部，两组之间哪些基因有差异（pseudobulk，DESeq2）
+./scRNA_pseudobulk_DE.r -I 05_annotation/05.seu_annotated.rds -CC celltype -SC orig.ident -GC group -G1 treat -G2 control -P 07. -O 07_pseudobulk
+
+# 可选：每个样本的细胞类型构成 + 两组占比比较
+./scRNA_spRNA_cellPro.r -I 05_annotation/05.seu_annotated.rds -SC orig.ident -CC celltype -GC group -GO control,treat -EC Unknown -P 08. -O 08_cellPro
+
+# 可选：用参考数据集自动推断细胞类型（SingleR）
+./scRNA_SingleR.r -I 04_clustering/04.seu_res0.6_clustered.rds -S mouse -P 05. -O 05_SingleR
+
+# 可选：对 DE 结果做 GO/KEGG 富集 + GSEA（逐细胞类型）
+./scRNA_spRNA_enrichment.r -I 05_annotation/05.seu_annotated.rds -DER 06_pseudobulk/06.KO_vs_WT_DE_raw.csv -CC celltype -GC group -G control,treat -A RNA -S mouse -IC Unknown -P 07. -O 07_enrichment
+
+# 可选：比较两组之间的通路活性差异（GSVA，不需要 DE 结果）
+./scRNA_GSVA_enrichment.r -I 05_annotation/05.seu_annotated.rds -AC celltype -SC orig.ident -GC group -G control,treat -S mouse -P 08. -O 08_GSVA
+
+# 可选：给自己的基因集打分（GSVA / ssGSEA / AddModuleScore / AUCell）
+./scRNA_genesetScore.r -I 05_annotation/05.seu_annotated.rds -G geneSet.txt -AC celltype -A RNA -P 09. -O 09_genesetScore
 
 # 主流程
 ./scRNA_QC_step1.r          -I input_list.csv -DT 10X -P 01. -O 01_QC
@@ -140,6 +171,12 @@ path,sample,group
 - step5 不重算 DE，直接复用 step4 产出的 `clusters_DE/` 表。
 - 从 **Broad Single Cell Portal** 下载数据时，用 `scRNA_mtx2rds.r` 直接建对象（细胞名列默认 `NAME`，首行 `TYPE` 自动跳过）。
 - `scRNA_subcelltype_clustering.r` 用于把已注释对象再细分：阶段 1 为每个细胞类型出 clustree，阶段 2 按你记录的每类型分辨率（CSV：`celltype`、`resolution`）定亚型并跑亚型 DE。
+- `scRNA_pseudobulk_DE.r` 回答「**每种细胞类型内部，两组之间哪些基因有差异**」：按「细胞类型 × 样本」聚合原始 counts 后跑 DESeq2，所以 `-SC` 必须填**生物学重复**。细胞级检验把每个细胞当重复，p 值会虚高；pseudobulk 的结论才能外推到新样本。
+- `scRNA_spRNA_cellPro.r` 回答「**每个样本里各细胞类型占多少、两组之间比例有没有差别**」：统计单位是样本（`-SC`），不是细胞。它是快速描述 + 简单 Wilcoxon 检验；需要带可信区间的正式成分检验时用 `scRNA_composition_sccoda.py`。
+- `scRNA_SingleR.r` 用参考数据集自动给出细胞类型名称，输入需已含 `seurat_clusters`（即 step4 的产物）。它的标签属于推断结果，需与 marker 交叉核对，是 step5 marker 注释的补充而非替代。
+- `scRNA_spRNA_enrichment.r` 把 DE 表翻译成通路层面的结论：显著基因做 GO/KEGG 富集，全部基因按 `-GM` 排序做 GSEA。DE 输入需含 `gene`、`cluster`、`p_val_adj`、`avg_log2FC`，所以 `scRNA_pseudobulk_DE.r` 的产物可以直接喂进来。富集在独立后台进程中执行，脚本跑完不代表结果已就绪。
+- `scRNA_GSVA_enrichment.r` 回答同样的问题但不需要 DE 表：它给每个细胞类型算通路活性再比较两组。`-G` 的顺序有含义——第一个是对照组（热图里在左），第二个是处理组。热图中的通路不一定显著：脚本会从 `adj.P.Val < 0.05` 依次退到 `P.Value < 0.05`、再到单纯按 `|logFC|` 排序，引用某条通路前请回查差异表里的 adj.P.Val。
+- `scRNA_genesetScore.r` 打的是你自己提供的基因集，不是通路库。同一个基因集会给四种分数（GSVA、ssGSEA、AddModuleScore、AUCell）、两个层级（细胞类型、单细胞）。脚本会打印基因集里有多少基因在对象中找不到——先看这个数，基因集与对象不匹配时分数没有意义。
 - 从 `.h5ad` 起步时先跑 `scRNA_spRNA_h5ad_preprocess.py`：`scRNA_h5ad2rds.r` 需要 `layers["counts"]` 层；若转换出的 Seurat 对象只有名为 `X` 的层，主流程 step1（按 `layer = "counts"` 取计数）无法使用。
 
 ## 示例可视化输出

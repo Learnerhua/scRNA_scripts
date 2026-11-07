@@ -13,6 +13,7 @@ A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scR
 | `scRNA_h5ad_seurat_convert.r` | standalone (conversion) | Single-file bidirectional conversion, direction chosen from the extension: `.h5ad` → `.rds` and `.rds` → `.h5ad` (factors → character first; assay / layer / compression selectable) | `.h5ad` ⇄ `.rds` | — |
 | `scRNA_mtx2rds.r` | standalone (data prep) | Builds a Seurat object from **Broad Single Cell Portal** exports: dense matrix (`-E`) or `.mtx` + cell/gene files (`-M/-C/-G`), plus a required metadata table (`-m`, cell-name column defaults to `NAME`, a leading `TYPE` row is dropped). Genes get `_`→`-` and `make.unique`; non-integer input keeps only the `data` layer | matrix + metadata → `seurat.rds` | — |
 | `scRNA_subcelltype_clustering.r` | standalone (refinement) | Sub-clusters every cell type of an annotated object separately: per-cell-type re-embedding (normalize → HVG → PCA → Harmony) plus a multi-resolution clustree, then re-clusters at the resolution you recorded per cell type, runs sub-celltype DE (markers, top-10, dotplots) and writes the `sub_celltype` labels back to the original object | annotated rds + resolution table → sub-celltype rds + per-subtype DE | `Images/subcelltype_clustering/` |
+| `scRNA_pseudobulk_DE.r` | standalone (statistics) | **Finds the genes that differ between two groups within each cell type.** Raw counts are summed per (cell type × sample) and `-G1` vs `-G2` is tested at sample level with DESeq2 — one independent test per cell type, so the result reads as "in this cell type, these genes differ". Units with too few cells and cell types with too few samples per group are skipped. Outputs a long DE table plus a unit provenance table, and a volcano plot | annotated rds (counts layer) → DE csv + volcano plot | `Images/pseudobulk_DE/` |
 | `scRNA_QC_step1.r` | pipeline `step1` | Per-sample QC with sample-specific thresholds (quantiles of nFeature_RNA / nCount_RNA + hard cap on percent.mt, optional percent.HB for red-blood-cell removal), then merge QC-passing samples; gene-level `min.cells` filtering is applied **after** merging | 10x directory / `.h5` list (CSV) → merged Seurat object (counts only) + QC violin/scatter plots | `Images/01_QC/` |
 | `scRNA_dedoublets_step2.r` | pipeline `step2` | Per-sample doublet detection with **scDblFinder**; optional **DecontX** ambient-RNA decontamination (also per sample) | merged rds → singlet-only rds (`seu_clean.rds`) | `Images/02_deContamination/` |
 | `scRNA_Nor_harmony_step3.r` | pipeline `step3` | NormalizeData (LogNormalize) → FindVariableFeatures (vst) → ScaleData → RunPCA → **Harmony** batch correction | clean rds → normalized + integrated rds (`seu_harmony.rds`) | `Images/03_Nor_Harmony/` |
@@ -21,6 +22,12 @@ A general-purpose, **continuously growing** toolkit for single-cell RNA-seq (scR
 | `scRNA_gene_expr.r` | standalone | Average expression of target genes in every cell type (CSV) plus 5 plot types: Ridge / Violin / Feature / Dot / Heatmap | annotated rds → expression CSV + plots | `Images/gene_expr/` |
 | `scRNA_gene_DE.r` | standalone | For one target gene: sample × cell-type mean-expression table, per-celltype z-scored heatmap, one barplot per cell type, and sample-level boxplots with Wilcoxon test + significance bars (each point is a sample, not a cell) | annotated rds → CSV + heatmap / bar / box plots | `Images/gene_DE/` |
 | `scRNA_composition_sccoda.py` | standalone | Compositional differential-abundance analysis with **scCODA** (Dirichlet-multinomial Bayesian model); `--deterministic` gives bit-reproducible MCMC | `.h5ad` / sample × cell-type count table / per-cell obs table → effect tables + sankey / boxplot / dispersion / forest plots | `Images/composition_sccoda/` |
+| `scRNA_spRNA_cellPro.r` | standalone (statistics) | **How much of each cell type is in each sample?** Counts and proportions per sample and per group, a 100 % stacked bar chart, a group→cell-type sankey plot, and a per-cell-type comparison of the two groups (Wilcoxon, one point per sample). Optionally repeats the comparison for sub-cell types | annotated rds → proportion tables + bar / sankey / comparison plots | `Images/cellPro/` |
+| `scRNA_SingleR.r` | standalone (annotation) | **Assigns cell-type names automatically from a reference dataset.** Matches every cluster of the query object against a reference (celldex built-in human/mouse via `-S`, or your own Seurat/RData reference via `-RDS`/`-RD`) with SingleR, writes the cluster→cell-type mapping back into the object, and draws the score heatmap plus a UMAP coloured by the inferred labels | clustered rds (with `seurat_clusters`) + reference → mapping csv + annotated rds + figures | `Images/SingleR/` |
+| `scRNA_spRNA_enrichment.r` | standalone (pathways) | **Turns differential genes into pathway-level conclusions.** Per cell type it runs GO/KEGG enrichment (using the genes detected in that cell type as background) and GSEA (all genes ranked by log2FC), reporting pathway p/q values, NES, dotplots and barplots. Prepares the inputs and calls the external `enrichment_analysis` command | annotated rds + DE result csv → enrichment tables + figures | `Images/enrichment/` |
+| `scRNA_GSVA_enrichment.r` | standalone (pathways) | **Compares pathway activity between two groups without needing a DE result.** Aggregates counts per (sample × cell type), normalises to log2(CPM+1), scores every pathway with GSVA (GO:BP, KEGG MEDICUS and REACTOME gene sets), then compares the scores between the two groups with limma and draws a per-cell-type pathway heatmap (control on the left) | annotated rds → pathway score table + pathway DE table + heatmaps | `Images/GSVA_enrichment/` |
+| `scRNA_genesetScore.r` | standalone (pathways) | **Scores a gene set of your own choosing.** Reads a text file of gene symbols and scores it four ways — GSVA and ssGSEA at the cell-type level, AddModuleScore and AUCell at single-cell level — then plots the cell-type barplots and the single-cell UMAP features. Useful for asking which cell types express a gene set of interest | annotated rds + gene set file → score table + 4 kinds of figures | `Images/genesetScore/` |
+| `enrichment_analysis.r` | helper (**required** by the script above) | Runs the actual GO/KEGG enrichment and GSEA with clusterProfiler: takes a target-gene list (`-G`) plus an optional background set (`-E`), or a ranked all-gene table for GSEA (`-GSEA` + `-GM`). Writes the enrichment tables, dotplots and barplots. Also usable on its own for bulk RNA | gene list / ranked table → enrichment tables + figures | — |
 | `sankey_composition.r` | helper (**required** by the script above) | Renders the composition sankey (alluvial) plot with `ggalluvial`. Called automatically by `scRNA_composition_sccoda.py`; **must live in the same directory** as it | composition CSV → sankey PNG/PDF | ↑ |
 
 ## Pipeline overview
@@ -72,6 +79,12 @@ standalone — independent of the pipeline numbering
 - format conversion (`scRNA_h5ad2rds.r`, `scRNA_h5ad_seurat_convert.r`): `anndataR` (default backend); optional `sceasy` (via reticulate, whose Python environment needs `numpy` + `anndata`)
 - matrix import (`scRNA_mtx2rds.r`): `Matrix` (`readMM`), `data.table` (`fread`)
 - sub-celltype clustering (`scRNA_subcelltype_clustering.r`): `clustree`, `harmony`, `reticulate` (`leidenalg` for Leiden), `patchwork`
+- pseudobulk DE (`scRNA_pseudobulk_DE.r`): `DESeq2` (Bioconductor), `Seurat`, `Matrix`, `tidyverse`, `ggrepel`, `RColorBrewer`, `scales`; `viridis` when there are more than 66 cell types
+- cell proportion analysis (`scRNA_spRNA_cellPro.r`): `ggalluvial` (sankey), `ggpubr` (significance labels), `patchwork` (sub-celltype panels), `tidyverse`, `Seurat`, `RColorBrewer`, `scales`
+- automatic annotation (`scRNA_SingleR.r`): `SingleR`, `SingleCellExperiment`, `scater`, `celldex` (built-in human/mouse reference), `Seurat`, `tidyverse`
+- pathway enrichment (`scRNA_spRNA_enrichment.r` + companion `enrichment_analysis.r`): the main script only prepares the inputs; the enrichment itself is done by the companion script, which needs `clusterProfiler`, `enrichplot`, `GseaVis` and `org.Hs.eg.db` / `org.Mm.eg.db`
+- pathway activity scoring (`scRNA_GSVA_enrichment.r`): `GSVA`, `msigdbr` (GO:BP / KEGG MEDICUS / REACTOME gene sets), `limma` (group comparison), `ComplexHeatmap` (heatmaps), `Seurat`, `tidyverse`
+- custom gene set scoring (`scRNA_genesetScore.r`): `GSVA` (GSVA + ssGSEA), `AUCell`, `Seurat` (AddModuleScore), `tidyverse`
 
 **Python side** (`scRNA_spRNA_h5ad_preprocess.py`, `scRNA_composition_sccoda.py`)
 
@@ -95,6 +108,24 @@ standalone — independent of the pipeline numbering
 
 # optional: sub-cluster each cell type of an annotated object (stage 1 -> clustree)
 ./scRNA_subcelltype_clustering.r -I 05_annotation/05.seu_annotated.rds -AC celltype -P 06. -O 06_subtype
+
+# optional: which genes differ between two groups within each cell type (pseudobulk, DESeq2)
+./scRNA_pseudobulk_DE.r -I 05_annotation/05.seu_annotated.rds -CC celltype -SC orig.ident -GC group -G1 treat -G2 control -P 07. -O 07_pseudobulk
+
+# optional: cell-type composition per sample + comparison between two groups
+./scRNA_spRNA_cellPro.r -I 05_annotation/05.seu_annotated.rds -SC orig.ident -CC celltype -GC group -GO control,treat -EC Unknown -P 08. -O 08_cellPro
+
+# optional: automatic cell-type labels from a reference dataset (SingleR)
+./scRNA_SingleR.r -I 04_clustering/04.seu_res0.6_clustered.rds -S mouse -P 05. -O 05_SingleR
+
+# optional: GO/KEGG enrichment + GSEA on the DE results (per cell type)
+./scRNA_spRNA_enrichment.r -I 05_annotation/05.seu_annotated.rds -DER 06_pseudobulk/06.KO_vs_WT_DE_raw.csv -CC celltype -GC group -G control,treat -A RNA -S mouse -IC Unknown -P 07. -O 07_enrichment
+
+# optional: pathway activity comparison between two groups (GSVA, no DE result needed)
+./scRNA_GSVA_enrichment.r -I 05_annotation/05.seu_annotated.rds -AC celltype -SC orig.ident -GC group -G control,treat -S mouse -P 08. -O 08_GSVA
+
+# optional: score your own gene set (GSVA / ssGSEA / AddModuleScore / AUCell)
+./scRNA_genesetScore.r -I 05_annotation/05.seu_annotated.rds -G geneSet.txt -AC celltype -A RNA -P 09. -O 09_genesetScore
 
 # main pipeline
 ./scRNA_QC_step1.r          -I input_list.csv -DT 10X -P 01. -O 01_QC
@@ -139,6 +170,12 @@ path,sample,group
 - `step5` does not recompute DE; it reuses the `clusters_DE/` tables produced by `step4`.
 - When starting from a **Broad Single Cell Portal** export, `scRNA_mtx2rds.r` assembles the Seurat object directly (cell-name column defaults to `NAME`; a leading `TYPE` row is skipped).
 - `scRNA_subcelltype_clustering.r` refines an annotated object: stage 1 writes one clustree per cell type, stage 2 applies the resolution you recorded per cell type (CSV: `celltype`, `resolution`) and runs sub-celltype DE.
+- `scRNA_pseudobulk_DE.r` answers "which genes differ between two groups within each cell type". It aggregates raw counts per (cell type × sample) and runs DESeq2, so `-SC` must be the **biological replicate**. Cell-level tests treat every cell as a replicate and give inflated p-values; the pseudobulk table is the one whose conclusions hold for new samples.
+- `scRNA_spRNA_cellPro.r` answers "how much of each cell type is in each sample, and do the proportions differ between two groups". The unit is the sample (`-SC`), not the cell. It is a fast description plus a simple Wilcoxon test; for a formal composition test with credible intervals use `scRNA_composition_sccoda.py` instead.
+- `scRNA_SingleR.r` gives cell-type names automatically by matching each cluster against a reference dataset. The input must already carry `seurat_clusters`, so it expects the output of step 4. Treat its labels as a first guess to be cross-checked against markers — it complements, rather than replaces, the marker-based annotation of step 5.
+- `scRNA_spRNA_enrichment.r` turns a DE table into pathway statements: GO/KEGG enrichment on the significant genes, GSEA on all genes ranked by `-GM`. Its DE input must carry `gene`, `cluster`, `p_val_adj` and `avg_log2FC`, so the output of `scRNA_pseudobulk_DE.r` feeds straight in. The enrichment itself runs in a separate background process — the script finishing does not mean the results are ready.
+- `scRNA_GSVA_enrichment.r` answers the same question without a DE table: it scores pathway activity per cell type and compares the two groups. The order of `-G` matters — the first group is the control (it ends up on the left of the heatmap), the second is the treatment. Pathways shown in a heatmap are not necessarily significant: the script falls back from `adj.P.Val < 0.05` to `P.Value < 0.05` to plain `|logFC|` ranking, so check `adj.P.Val` in the DE table before quoting a pathway.
+- `scRNA_genesetScore.r` scores a gene set you provide, not a pathway library. It reports four scores for the same set (GSVA, ssGSEA, AddModuleScore, AUCell) at two levels (cell type, single cell), and prints how many of your genes were found in the object — check that count first, since a gene-set / object mismatch makes the scores meaningless.
 - When starting from `.h5ad`, run `scRNA_spRNA_h5ad_preprocess.py` first: `scRNA_h5ad2rds.r` needs a `layers["counts"]` layer, and a Seurat object whose only layer is named `X` cannot be used by the pipeline (step1 reads `layer = "counts"`).
 
 ## Visualization examples

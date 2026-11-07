@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/oldhome/ouyjh/miniforge3/envs/scanpy/bin/python
 import sys,argparse,warnings,platform,os
 from datetime import datetime
 import scanpy as sc

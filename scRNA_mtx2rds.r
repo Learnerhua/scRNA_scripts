@@ -1,4 +1,4 @@
-#!/usr/bin/env Rscript
+#!/oldhome/ouyjh/miniforge3/envs/old_base/bin/Rscript
 rm(list = ls())
 options(timeout = 1000)
 

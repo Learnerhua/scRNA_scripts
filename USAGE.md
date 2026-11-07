@@ -10,25 +10,35 @@
 
 | 步骤 | 脚本 | 用途 | 输入 → 输出 |
 |---|---|---|---|
-| step1 | `scRNA_QC_step1.r` | 每样本独立 QC + 合并 | 10x 目录 / h5 列表 → 合并 rds |
-| step2 | `scRNA_dedoublets_step2.r` | 去双细胞（可选 DecontX 去环境 RNA） | 合并 rds → 干净 rds |
-| step3 | `scRNA_Nor_harmony_step3.r` | 归一化 + Harmony 批次整合 | 干净 rds → 整合 rds |
-| step4 | `scRNA_clustering_step4.r` | 多分辨率探索 + 聚类 + 差异表达 | 整合 rds → 聚类 rds + markers |
-| step5 | `scRNA_annotate_step5.r` | 细胞类型注释（探索 / 标注两种模式） | 聚类 rds + marker 表 → 注释 rds |
+| step1 | `scRNA_QC_step1.r` | **质控并合并样本**：每个样本按自身分位数定阈值剔除低质量细胞，再把所有样本合并为一个对象 | 10x 目录 / h5 列表 → 合并 rds |
+| step2 | `scRNA_dedoublets_step2.r` | **去除双细胞与环境污染**：逐样本建模识别双细胞（可选 DecontX 去除环境 RNA）并剔除 | 合并 rds → 干净 rds |
+| step3 | `scRNA_Nor_harmony_step3.r` | **归一化并消除批次效应**：LogNormalize 后用 Harmony 把不同样本/批次的细胞整合到一起 | 干净 rds → 整合 rds |
+| step4 | `scRNA_clustering_step4.r` | **聚类并找出各群差异基因**：多分辨率探索聚类结构，再在选定分辨率下聚类并做 marker 分析 | 整合 rds → 聚类 rds + markers |
+| step5 | `scRNA_annotate_step5.r` | **给细胞群标注细胞类型**：用 marker 列表把每个 cluster 映射到具体细胞类型 | 聚类 rds + marker 表 → 注释 rds |
 
 **独立脚本**（不参与主流程编号，可单独使用）：
 
 | 脚本 | 用途 | 输入 → 输出 |
 |---|---|---|
-| `scRNA_spRNA_h5ad_preprocess.py` | h5ad 计数矩阵预处理：判定并取出原始整数 counts（`X`，否则回退 `raw.X`）、按 `-V` 重设基因名并合并同名基因 | h5ad（目录 / 单文件）→ 含 `X` + `layers["counts"]` 的 h5ad |
-| `scRNA_h5ad2rds.r` | 批量 h5ad → Seurat rds（`anndataR` / `sceasy` 两条路径） | h5ad（目录 / 单文件）→ rds |
-| `scRNA_h5ad_seurat_convert.r` | 单文件双向格式转换（按扩展名自动判方向） | h5ad ⇄ rds |
-| `scRNA_mtx2rds.r` | 把 Broad Single Cell Portal 下载的矩阵 + 元数据组装成 Seurat 对象（稠密矩阵或稀疏三元组两种输入） | 矩阵文件（+ metadata）→ `seurat.rds` |
-| `scRNA_subcelltype_clustering.r` | 对已注释对象按细胞类型逐个做亚型聚类（多分辨率 clustree → 按指定分辨率定亚型 → 亚型 DE），并把亚型标签回写到原对象 | 注释 rds + 分辨率表 → 亚型 rds + 各亚型 DE |
-| `scRNA_gene_expr.r` | 目标基因跨细胞类型表达可视化 | 已注释 rds → 均值 CSV + 5 类图 |
-| `scRNA_gene_DE.r` | 样本 × 细胞类型表达矩阵 + 热图 / 柱状图 / 箱线图 | 已注释 rds → 表 + 图 |
-| `scRNA_composition_sccoda.py` | 细胞组成成分差异分析（scCODA） | h5ad / 计数表 → 效应表 + 图 |
+| `scRNA_spRNA_h5ad_preprocess.py` | **清洗 h5ad 计数矩阵**：判定并取出原始整数 counts（`X`，否则回退 `raw.X`）、按 `-V` 重设基因名并合并同名基因，得到可直接用于差异分析的结构 | h5ad（目录 / 单文件）→ 含 `X` + `layers["counts"]` 的 h5ad |
+| `scRNA_h5ad2rds.r` | **批量 h5ad 转 Seurat rds**：两条后端可选，`anndataR`（纯 R）/ `sceasy`（Python）| h5ad（目录 / 单文件）→ rds |
+| `scRNA_h5ad_seurat_convert.r` | **单文件 h5ad ⇄ rds 双向转换**：按扩展名自动判定转换方向 | h5ad ⇄ rds |
+| `scRNA_mtx2rds.r` | **把 Broad Single Cell Portal 下载的数据组装成 Seurat 对象**：读入表达矩阵与元数据（支持稠密矩阵与稀疏三元组两种输入），对齐细胞名后建对象 | 矩阵文件（+ metadata）→ `seurat.rds` |
+| `scRNA_subcelltype_clustering.r` | **在细胞类型内部细分亚型**：逐细胞类型重跑降维与聚类出 clustree，按指定分辨率定亚型并做亚型 DE，最后把亚型标签回写到原对象 | 注释 rds + 分辨率表 → 亚型 rds + 各亚型 DE |
+| `scRNA_pseudobulk_DE.r` | **在每个细胞类型中，找出两组之间差异表达的基因**（每个细胞类型单独检验，样本层面的 DESeq2），并画火山图 | 注释 rds → DE csv + 火山图 |
+| `scRNA_gene_expr.r` | **展示目标基因在不同细胞类型中的表达**：逐基因给出跨细胞类型的平均表达量，并生成 5 类表达分布图 | 已注释 rds → 均值 CSV + 5 类图 |
+| `scRNA_gene_DE.r` | **比较单个目标基因在样本与细胞类型间的表达差异**：给出样本 × 细胞类型均值表与热图 / 柱状图 / 箱线图，两组间比较以样本为单位 | 已注释 rds → 表 + 图 |
+| `scRNA_composition_sccoda.py` | **检验两组间细胞类型比例构成的差异**：用 Dirichlet-Multinomial 贝叶斯模型做正式成分差异分析，输出带可信区间的效应表 | h5ad / 计数表 → 效应表 + 图 |
+| `scRNA_spRNA_cellPro.r` | **每个样本里各种细胞类型各占多少**：出样本级/组级占比表、组成柱状图、桑基图，并比较两组之间各细胞类型占比是否不同 | 注释 rds → 占比表 + 柱状图 + 桑基图 + 占比比较图 |
+| `scRNA_SingleR.r` | **用参考数据集自动推断细胞类型**：把查询对象的每个聚类与参考数据比对，输出 cluster→cell type 映射并写回对象 | 已聚类 rds + 参考数据 → 注释结果 csv + rds + 图 |
+| `scRNA_spRNA_enrichment.r` | **把差异基因翻译成通路层面的结论**：逐细胞类型做 GO/KEGG 富集与 GSEA，把「哪些基因变了」变成「哪些通路变了」 | 注释 rds + DE 结果 csv → 富集表 + 图 |
+| `scRNA_GSVA_enrichment.r` | **比较两组之间的通路活性差异**：不依赖差异分析结果，直接用 GSVA 给每个细胞类型算通路活性分数并做组间检验 | 注释 rds → 通路分数表 + 差异表 + 热图 |
+| `scRNA_genesetScore.r` | **给自定义基因集打分**：算 GSVA / ssGSEA / AddModuleScore / AUCell 四种分数，看这个基因集在哪些细胞类型或细胞里更活跃 | 注释 rds + 基因集文件 → 分数表 + 4 类图 |
+| `enrichment_analysis.r` | **配套脚本**：执行实际的 GO/KEGG 富集与 GSEA（第 17 章脚本调用它）| 基因列表 / 排序表 → 富集表 + 图 |
+| `sankey_composition.r` | **配套脚本**：用 `ggalluvial` 渲染细胞组成桑基图（第 8 章脚本调用它）| 组成占比表 → 桑基图 |
 
+> `enrichment_analysis.r` 不是独立调用的分析脚本，而是 `scRNA_spRNA_enrichment.r` 的**必需配套脚本** —— 后者用 `system()` 调用它做实际的 GO/KEGG 富集与 GSEA（命令名 `enrichment_analysis` 需在 `PATH` 中；本文件提供的是 `.r` 版本，命名为 `enrichment_analysis` 的软链/副本即可被调用）。缺该命令时主脚本仍会跑完并生成所有中间文件，但富集结果为空。
+>
 > `sankey_composition.r` 不是独立调用的分析脚本，而是 `scRNA_composition_sccoda.py` 的**必需配套脚本** —— 后者用 R + `ggalluvial` 渲染细胞组成桑基图，由 py 自动调用（无需手动运行），因此该文件**必须与 `scRNA_composition_sccoda.py` 放在同一目录**。缺 R 或 `ggalluvial` 时仅桑基图跳过，其余产物不受影响。
 
 使用约定：
@@ -37,6 +47,12 @@
 - 数据准备/格式转换类脚本（`scRNA_spRNA_h5ad_preprocess.py` → `scRNA_h5ad2rds.r`）是从 h5ad 起步时的前置链：先清洗计数矩阵，再转成 Seurat rds，之后即可接主流程 step1；`scRNA_h5ad_seurat_convert.r` 负责单文件双向互转（含 rds → h5ad 导出）。
 - 从 Broad Single Cell Portal（singlecell.broadinstitute.org）下载的数据可用 `scRNA_mtx2rds.r` 直接建对象：稠密矩阵走 `-E`，稀疏三元组走 `-M/-C/-G`，元数据里细胞名列用 `-CC` 指定（SCP 导出默认列名就是 `NAME`）。
 - 注释完成后若要对每个细胞类型再细分亚型，用 `scRNA_subcelltype_clustering.r`：它按 `-AC` 指定的细胞类型逐个重跑降维与聚类，先出多分辨率 clustree 供人工选分辨率，再按 `-Res` 指定的「细胞类型 → 分辨率」表定亚型、跑亚型 DE，最后把 `sub_celltype` 标签回写到原对象。
+- 想回答「**每种细胞类型里，两组之间的差异基因是哪些**」用 `scRNA_pseudobulk_DE.r`：它按「细胞类型 × 样本」把原始 counts 求和成 pseudobulk，再用 DESeq2 在**样本层面**比较 `-G1` vs `-G2`。重复单位是样本而不是细胞，所以 p 值不会因细胞数多而虚高，结论可外推到新样本。
+- 想看「每个样本里各细胞类型占多少、两组之间比例有没有差别」用 `scRNA_spRNA_cellPro.r`：它按样本统计各细胞类型的数量与占比，出计数表/占比表、100% 堆叠柱状图、组成桑基图，并在两组时逐细胞类型做 Wilcoxon 检验（**每个点是一个样本**）。若要的是带贝叶斯置信区间的严格成分差异检验，用 `scRNA_composition_sccoda.py`；本脚本是快速描述 + 简单检验。
+- 想快速、无marker 地给细胞类型「起个名字」时用 `scRNA_SingleR.r`：它把查询对象按 `seurat_clusters` 与参考数据集比对（`-S human`/`-S mouse` 用 celldex 内置参考，或 `-RDS`/`-RD` 用自己的参考），输出 cluster→cell type 映射并写回对象。这是**自动推断**，结果需结合 marker 人工确认，不能替代 step5 的 marker 注释。
+- DE 结果拿到之后，想知道「这些差异基因背后是哪条通路在变」用 `scRNA_spRNA_enrichment.r`：它逐细胞类型做 GO/KEGG 富集（用该类型自身检出的基因作背景）与 GSEA（用全基因按 log2FC 排序），输出各通路的 p/q 值、NES 与 dotplot/barplot。
+- 想比较「两组之间哪些通路的活性不一样」但手上还没有 DE 结果时，用 `scRNA_GSVA_enrichment.r`：它按「样本 × 细胞类型」聚合成伪 bulk，算 log2(CPM+1) 后用 GSVA 打分（GO:BP / KEGG MEDICUS / REACTOME 三套基因集），再用 limma 在样本层面比较两组。它与 `scRNA_spRNA_enrichment.r` 互补：前者看「通路活性」，后者看「差异基因落在哪些通路上」。
+- 想看「某个自定义基因集在哪些细胞类型里更活跃」用 `scRNA_genesetScore.r`：它同时给 GSVA / ssGSEA（细胞类型层面）与 AddModuleScore / AUCell（单细胞层面）四种分数，可互相印证，也能看出这个基因集是不是被某一个细胞类型特异性表达。
 - 独立脚本不依赖主流程的步骤顺序：`scRNA_gene_expr.r`、`scRNA_gene_DE.r` 需要一个含 celltype 列的已注释 Seurat 对象（典型来源是 step5 的 `seu_annotated.rds`）；`scRNA_composition_sccoda.py` 直接读 h5ad 或样本 × 细胞类型计数表，与主流程无关。
 - 脚本会识别已存在的关键产物作为缓存（通常只重画图、不重算），强制重跑时删除对应 rds 即可。
 
@@ -57,6 +73,12 @@
 | `Images/gene_DE/` | `scRNA_gene_DE.r` | 热图、柱状图、箱线图 |
 | `Images/composition_sccoda/` | `scRNA_composition_sccoda.py` | 组成桑基、相对丰度箱线图、离散度、效应森林图 |
 | `Images/subcelltype_clustering/` | `scRNA_subcelltype_clustering.r` | 每个细胞类型的 clustree、亚型 UMAP，以及各亚型 DE 目录下的 marker dotplot |
+| `Images/cellPro/` | `scRNA_spRNA_cellPro.r` | 100% 堆叠柱状图（各样本的细胞类型构成）、组→细胞类型桑基图、逐细胞类型的两组占比比较图 |
+| `Images/pseudobulk_DE/` | `scRNA_pseudobulk_DE.r` | 按细胞类型分区的差异表达火山图（底部色块为细胞类型，红上/蓝下，标注每型 top 差异基因）|
+| `Images/SingleR/` | `scRNA_SingleR.r` | SingleR 得分热图（各聚类与各参考标签的相似度）、按推断标签着色的 UMAP |
+| `Images/enrichment/` | `scRNA_spRNA_enrichment.r` | GO 富集 dotplot / barplot、KEGG 富集 dotplot / barplot、GSEA 的 GO 与 KEGG 图 |
+| `Images/GSVA_enrichment/` | `scRNA_GSVA_enrichment.r` | 通路活性热图：行 = 通路（按 GOBP / KEGG / REACTOME 分区），列 = 样本（对照组在左），右侧标注数据库来源 |
+| `Images/genesetScore/` | `scRNA_genesetScore.r` | GSVA 分数柱状图、ssGSEA 分数柱状图、AddModuleScore 与 AUCell 的 UMAP 特征图 |
 
 各章「输出」小节末尾给出对应的示例目录。示例图仅用于展示输出形式与排版，其文件名与各章输出的 `<前缀><文件名>` 规则一致。
 
@@ -65,6 +87,8 @@
 ## 1 scRNA_QC_step1 —— 每样本独立 QC + 合并
 
 ### 功能
+
+**回答的问题：哪些细胞该被剔除？把多个样本清理干净并合并成一个可分析的对象。**
 
 读取多个单细胞样本（10x 目录或 h5），对**每个样本独立执行 QC**（阈值取自该样本自身的 nFeature_RNA / nCount_RNA 分位数 + percent.mt / percent.HB 硬上限），QC 通过后合并为一个 Seurat 对象。基因级 min.cells 过滤在合并后统一执行，避免低频基因因单样本表达不足被过早删除。按样本自适应阈值，适配样本间测序深度差异大的数据集。归一化在后续步骤统一执行（先删基因后归一化，避免归一化后再删基因导致的分母不一致）。
 
@@ -156,6 +180,8 @@ QC 规则（每个样本独立计算）：
 
 ### 功能
 
+**回答的问题：哪些细胞是「两个细胞粘在一起」的双细胞？哪些是环境 RNA 污染？**
+
 读取 step1 的 QC 后合并对象（仅 counts），内部执行轻量 Normalize → Scale → PCA → UMAP → FindCluster 作为双细胞建模的辅助，**这些归一化结果不保存**。然后用 **scDblFinder per-sample 建模**（通过 samples 参数）预测每个细胞为 Doublet/Singlet。可选启用 **DecontX per-sample 跑**（每样本独立去环境 RNA 污染），同样按每样本自己的 90% 分位定 L-prob / H-prob 阈值。
 
 最终过滤 Singlet（-D 时还要求 L-prob），用 `DietSeurat` 只保留 counts 层，输出供下一步归一化使用。
@@ -232,6 +258,8 @@ QC 规则（每个样本独立计算）：
 
 ### 功能
 
+**回答的问题：不同样本/批次的细胞混在一起了吗？把批次效应消掉，让同一类细胞聚到一起。**
+
 读取 step2 的 counts-only 对象，按顺序执行：**NormalizeData（LogNormalize）→ FindVariableFeatures（vst）→ ScaleData → RunPCA → RunHarmony** 批次校正。输出含 `pca` 与 `harmony` 两个降维的结果对象，供 step4 聚类使用。
 
 step1/2 刻意不归一化（避免删基因前归一化导致分母不一致），归一化在本步统一完成。
@@ -293,6 +321,8 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 ## 4 scRNA_clustering_step4 —— 聚类与差异表达
 
 ### 功能
+
+**回答的问题：这些细胞可以分成几群？每群之间哪些基因有差异？**
 
 读取 step3 输出的 harmony 对象，分两阶段产出：
 1. **探索模式（不传 -Res）**：FindNeighbors + 多分辨率 FindClusters（`seq(0, 1, by=0.1)`，Louvain；`seq(0.1, 1, 0.1)`，Leiden）→ 生成 clustree.png（用于人工选 Res）
@@ -388,6 +418,8 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 
 ### 功能
 
+**回答的问题：每一群细胞是什么细胞类型？**
+
 读取 step4 的聚类对象（`seu_res<Res>_clustered.rds`），用两种模式：
 1. **探索模式（-MB）**：用户提供 cell type marker 列表（2 列 TSV），脚本画 cluster × marker dotplot 用于人工判断每个 cluster 的身份。**不写 rds。**
 2. **标注模式（-MA）**：用户提供 cluster → cell type 映射表（3 列 TSV：Cluster / Markers / CellType），脚本画 celltype UMAP + celltype dotplot，并写 `seu_annotated.rds`（含 celltype meta 列）。
@@ -473,6 +505,8 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 
 ### 功能
 
+**回答的问题：我想看的这几个基因，在不同细胞类型里分别表达多少、长什么样？**
+
 读取已注释的 Seurat 对象（典型来源是 step5 的 `seu_annotated.rds`），计算每个目标基因在每种细胞类型中的平均表达量（基于 data 层，LogNormalize 后），导出为 CSV，并基于 Seurat 内置函数生成 5 种可视化图（Ridge / Violin / Feature / Dot / Heatmap）。
 
 ### 输入
@@ -549,6 +583,8 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 ## 7 scRNA_gene_DE（独立脚本）—— 样本 × 细胞类型表达矩阵 + 热图 + 柱状图 + 箱线图
 
 ### 功能
+
+**回答的问题：某个基因在每种细胞类型里、在各个样本中的表达量如何？两组样本之间这个基因有差别吗？**
 
 读取已注释的 Seurat 对象（如 step5 的 `seu_annotated.rds`），对**单个目标基因**计算其在每种"样本 × 细胞类型"组合下的平均表达量，并一次性产出数值表与三类图：
 
@@ -640,11 +676,25 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 
 ## 8 scRNA_composition_sccoda（独立脚本）—— 细胞组成成分差异分析（scCODA）
 
-### 简介
+### 功能
+
+**回答的问题：两组之间，细胞类型的「比例构成」有没有变化？（不是表达量的差异，而是「有多少这种细胞」）**
 
 scCODA 是基于 Dirichlet-Multinomial 模型的贝叶斯成分差异分析方法。给定一个**样本 × 细胞类型**的计数表，识别哪些细胞类型在两组之间的**相对丰度**显著不同（同时避免"一类升高导致另一类机械性下降"的成分数据假阳性）。
 
-### 标准调用
+### 输入
+
+三种输入格式，脚本按扩展名与列名自动判定（也可用 `-T` 强制指定）：
+
+| 格式 | 说明 | 需要的列 |
+|---|---|---|
+| `.h5ad` | AnnData 对象 | `obs` 里的样本列（`-S`）与细胞类型列（`-CT`）|
+| 计数表 | 样本 × 细胞类型，行=样本、列=细胞类型 | 首列为样本名 |
+| 每行一细胞 | 长表 | 样本列（`-S`）与细胞类型列（`-CT`）|
+
+其中 h5ad 与长表模式还会读 `-GC` 指定的分组列。
+
+### 用法示例
 
 ```
 ./scRNA_composition_sccoda.py -I <input.h5ad> \
@@ -657,7 +707,7 @@ scCODA 是基于 Dirichlet-Multinomial 模型的贝叶斯成分差异分析方�
 
 **建议正式分析一律带上 `--deterministic`**——否则同样的命令重复运行会得到略有差异的结果（只有设了种子也不够，原因见下）；带上它可保证结果**逐位可复现**、报告引用的数字永远对得上，代价几乎为零。桑基图（Plot 1）由同目录的 `sankey_composition.r`（**本脚本的必需配套脚本**，须与 py 同目录）渲染，脚本会自动调用，无需手动运行。
 
-### 核心参数速查
+### 参数
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -710,6 +760,7 @@ scCODA 是基于 Dirichlet-Multinomial 模型的贝叶斯成分差异分析方�
 
 ### 注意事项
 
+- **样本量是硬门槛**：scCODA 的经验要求是每组 ≥ 6–8 个样本。样本少时，自动参考类型选择（要求「出现率 ≥ 95% 的样本」）会退化成「几乎所有样本都要出现该类型」，几乎找不到合格参考，模型本身也不稳定。**样本量不满足时，任何方法都给不出可靠结论**——此时只能做描述性比较（占比表、柱状图、桑基图），不要下显著性结论。
 - **输入文件三种形式**：`h5ad`（仅读 `adata.obs` 用 `backed='r'`，不加载表达矩阵，1 GB 文件也快）/ `counts`（每行一样本）/ `obs`（每行一细胞）。**R 的 .rds 不能直接被 Python 读**（S4 对象），需先转换为 h5ad（例如 `sceasy::convertFormat`、`zellkonverter::SceToAnnData`、`SeuratDisk::SaveH5Seurat` + `Convert`）。
 - **每个样本只对应一个分组**：`sample × group` 必须一一对应，否则脚本会显式报错。这是有意约束——scCODA 以"样本"为最小单位。
 - **零计数自动加伪计数 0.5**：脚本会打印 `Zero counts encountered in data! Added a pseudocount of 0.5.`，这是 scCODA 的内置 Dirichlet-multinomial 处理。**报告中需说明**：这些 0 是"该样本未检出该细胞类型"（不是"表达为零"）。
@@ -778,6 +829,8 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 
 ### 功能
 
+**回答的问题：这个 h5ad 里的矩阵是原始计数吗？能不能直接拿来算差异分析？**
+
 把 h5ad 整理成后续分析可直接使用的形态，做三件事：
 
 1. **确定哪一份矩阵是原始整数 counts**：先看 `adata.X`（随机抽 1000 个细胞，按 1e-6 容差判断取值是否全为整数）；不是整数则回退 `adata.raw.X`；两者都不是整数则报错中止。
@@ -829,6 +882,8 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 ## 10 scRNA_h5ad2rds.r（独立脚本）—— 批量 h5ad → Seurat rds
 
 ### 功能
+
+**回答的问题：怎么把 h5ad 文件变成 Seurat 能直接用的 rds？**
 
 把一批（或单个）h5ad 转成 Seurat `.rds`，两条后端：
 
@@ -882,6 +937,8 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 
 ### 功能
 
+**回答的问题：怎么把单个 h5ad / rds 互相转换？**
+
 按输入扩展名自动判定方向，单文件互转：
 
 - 输入 `.h5ad` → `anndataR::read_h5ad(as = "Seurat")` → 存 `.rds`
@@ -930,6 +987,8 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 ## 12 scRNA_mtx2rds.r（独立脚本）—— Broad SCP 矩阵转 Seurat 对象
 
 ### 功能
+
+**回答的问题：从 Broad Single Cell Portal 下载的矩阵和元数据，怎么直接变成可用的 Seurat 对象？**
 
 把 **Broad Single Cell Portal**（singlecell.broadinstitute.org）下载的表达矩阵和元数据直接组装成 Seurat 对象，省去手工读矩阵、对齐细胞名、构造对象的过程。两种输入模式（互斥，必须给其中一种）：
 
@@ -988,6 +1047,8 @@ Step 4: 报告里说明：用什么参考、为什么、两次一致性如何
 ## 13 scRNA_subcelltype_clustering.r（独立脚本）—— 细胞类型内亚型聚类
 
 ### 功能
+
+**回答的问题：同一个细胞类型内部还能不能再细分？每一群亚型的特征基因是什么？**
 
 在**已完成细胞类型注释**的对象上，对每个细胞类型**单独**再做一轮亚型细分：
 
@@ -1067,6 +1128,600 @@ celltypeB,0.8
 
 ---
 
+## 14 scRNA_pseudobulk_DE.r（独立脚本）—— 按细胞类型找两组差异基因（pseudobulk）
+
+### 功能
+
+**回答的问题：在每一种细胞类型内部，两组（`-G1` vs `-G2`）之间哪些基因的表达存在差异？**
+
+具体做法：把同一个「细胞类型 × 样本」内的所有细胞的原始 counts 相加，得到一行 pseudobulk 计数（每个细胞类型得到一张「样本 × 基因」的表），再用 DESeq2 在**样本层面**比较两组，得到该细胞类型的差异基因列表；**每个细胞类型各做一次独立检验**，最后把所有细胞类型的结果合并成一张表并画成火山图（每个细胞类型一个分区，标注该类型的 top 差异基因）。
+
+因此输出是一张**长表**：`cluster` 列标明每个差异基因来自哪一种细胞类型，可以直接读出「哪类细胞里的哪个基因在两组间不同」。
+
+**统计口径要点**：重复单位是**样本**（生物学重复），不是细胞。细胞层面的 Wilcoxon 检验会把每个细胞当作一个重复，p 值随细胞数增大而虚高；pseudobulk 把同一样本的细胞先合并，p 值反映的才是「换个样本还看不看得到这个差异」，因此结论可外推到新样本。
+
+### 输入
+
+一个已注释的 Seurat rds，**必须含 `counts` 层**（原始整数计数）。若对象是多个对象 `merge()` 得来、counts 被拆成 `counts.1`/`counts.2` 等多层，脚本会自动 `JoinLayers` 合并后再聚合。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| 已注释 Seurat rds（含 counts 层）|
+| `-CC, --celltype_column` | 无（必填）| 细胞类型列；逐个水平各做一次检验 |
+| `-SC, --sample_column` | 无（必填）| 样本/个体列，即生物学重复 |
+| `-GC, --group_column` | 无（必填）| 分组列 |
+| `-G1, --group1` | 无（必填）| 作为 ident.1 的组；log2FC > 0 表示在该组更高 |
+| `-G2, --group2` | 无（必填）| 作为 ident.2（参照）的组 |
+| `-A, --assay` | RNA | 含 counts 层的 assay |
+| `-MC, --min_cells` | 20 | 单个「细胞类型 × 样本」单元的最少细胞数，低于则丢弃该单元 |
+| `-MS, --min_samples` | 3 | 每组最少样本数，不足则该细胞类型跳过（不检验）|
+| `-p_val` | 0.05 | 原始 p 值阈值（仅用于过滤输出）|
+| `-p_adj` | 0.05 | 校正 p 值阈值（仅用于过滤输出）|
+| `-lgFC` | 1 | \|avg_log2FC\| 阈值（仅用于过滤输出）|
+| `-top_n` | 5 | 火山图每细胞类型每侧标注的基因数 |
+| `-W, --plot_width` | 18 | 图宽（英寸）|
+| `-H, --plot_height` | 12 | 图高（英寸）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_pseudobulk_DE.r -I 05_annotation/05.seu_annotated.rds \
+    -CC celltype -SC orig.ident -GC group -G1 treat -G2 control \
+    -P 06. -O 06_pseudobulk
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀><G1>_vs_<G2>_DE_raw.csv` | 全部基因 × 全部细胞类型的检验结果，未过滤 |
+| `<前缀><G1>_vs_<G2>_DE_filtered.csv` | 按 p / 校正 p / log2FC 阈值过滤后的差异基因 |
+| `<前缀><G1>_vs_<G2>_pseudobulk_units.csv` | **溯源表**：每个细胞类型的单元数、两组样本数、单元细胞数的最小/最大值 |
+| `<前缀><G1>_vs_<G2>_DE_volcano.png/.pdf` | 火山图（灰阴影柱表示每个细胞类型的 log2FC 范围，红上/蓝下，标注 top 基因，底部细胞类型色块）|
+
+示例输出：`Images/pseudobulk_DE/`。
+
+CSV 列名固定为 `gene,p_val,avg_log2FC,pct.1,pct.2,p_val_adj,cluster`（`cluster` 即细胞类型），与 Seurat `FindAllMarkers` 的输出格式一致，便于下游工具直接读取。
+
+`pct.1` / `pct.2` 在 pseudobulk 语境下的含义是：**该组内有多少比例的样本（pseudobulk 单元）检出该基因**（非零计数），而不是细胞比例。
+
+### 注意事项
+
+- **必须用原始 counts**：脚本从 `counts` 层聚合；若对象只有 `data`（归一化后的值），pseudobulk 求和没有意义，DESeq2 也会拒绝非整数输入。
+- **不做 CPM 归一化**：聚合方式是原始 counts 直接相加，样本间测序深度差异由 DESeq2 的 size factor（median-of-ratios）吸收。这样保持整数计数以符合负二项模型，也不引入「总量归一化」的额外假设。
+- **重复单位是样本**：`-SC` 必须是**生物学重复**（个体/样本），不能填细胞条形码或分组标签，否则退化成伪重复。
+- **`-MC` 是数据质量闸门**：单元细胞数太少时聚合噪声大。典型 10–50 的区间；调高会减少可用单元数、调低会放进噪声单元。经验规律：`-MC` 偏低时个别细胞类型会因某组样本数不足而被跳过；调得过高则细胞类型陆续退出检验。默认值 20 在多数数据上兼顾了保留单元数与控制噪声。
+- **`-MS` 是统计可行性闸门**：不足 3 个样本/组时 DESeq2 的离散度估计不稳定，该细胞类型直接跳过并打印 `>>> Skip ...`，不产出 p 值。
+- **过滤阈值只影响输出文件与图**，不影响检验本身：`raw` 表保留全部基因的原始 p 值，可自行用别的阈值重筛。
+- **BH 校正是在每个细胞类型内做的**（每个细胞类型一次 DESeq2 运行），不是跨所有细胞类型合并校正。若需要全局 FDR，请对 raw 表自行重算。
+- 细胞类型名不做任何字符替换，含括号或空格的名称会原样出现在 CSV 与图中。
+- 火山图使用 `pseudo_log` 变换的 y 轴（log2FC 而非 -log10 p），与库内其它 DE 脚本风格一致；因此**点的位置只反映效应量与显著性方向的组合，不反映 p 值大小**。
+
+
+---
+
+## 15 scRNA_spRNA_cellPro.r（独立脚本）—— 细胞类型占比分析（每样本构成 + 组间比较）
+
+### 功能
+
+**回答的问题：每个样本里各种细胞类型各占多少？两组之间这些比例有没有差别？**
+
+脚本做四件事，全部基于已注释对象的 `meta.data`（只用细胞计数，不需要表达矩阵）：
+
+1. **计数与占比表**：按样本统计每个细胞类型的细胞数，以及该细胞类型在这个样本中的占比；再按组汇总一份。
+2. **100% 堆叠柱状图**：每个样本一根柱子，按组分面，一眼看出组间构成差异。
+3. **组成桑基图**：组 → 细胞类型的流向图，看整体构成比例。
+4. **组间占比比较**（需 `-GO` 恰好给两组）：逐细胞类型画箱线图 + 散点 + Wilcoxon 检验与显著性标注；散点**每个点是一个样本**。
+5. **亚型层面的占比比较**（可选 `-SCC`）：若对象有亚型列（如 `sub_celltype`），再按每个父细胞类型出一张亚型占比比较图，最后拼成一张大图。
+
+### 输入
+
+已注释的 Seurat rds（只需 `meta.data` 中有样本列、细胞类型列、分组列；亚型比较另需亚型列）。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| 已注释 Seurat rds |
+| `-SC, --sample_column` | 无（必填）| 样本身份列（如 `orig.ident`），决定统计单位 |
+| `-CC, --celltype_column` | 无（必填）| 细胞类型列（如 `celltype`）|
+| `-GC, --group_column` | 无（必填）| 分组列（如 `Group`）|
+| `-SCC, --sub_celltype_column` | 无 | 亚型列（如 `sub_celltype`）；给了才做亚型占比比较 |
+| `-GO, --group_order` | 无 | 分组显示顺序，逗号或空格分隔（如 `control,treat`）。**只有恰好两组时才做占比检验**，并决定柱状图分面顺序与桑基图上下位置 |
+| `-EC, --end_celltype` | 无 | 指定某个细胞类型钉在图的最末端（常用于把 `Unknown` 放到最后）|
+| `-BW / -BH` | 10 / 12 | 柱状图宽 / 高（英寸）|
+| `-SW / -SH` | 12 / 6 | 桑基图宽 / 高（英寸）|
+| `-DW / -DH` | 14 / 8 | 细胞类型占比比较图宽 / 高（英寸）|
+| `-SDW / -SDH` | 36 / 28 | 亚型占比比较大图宽 / 高（英寸）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 计数 + 占比表 + 柱状图 + 桑基图 + 两组占比比较
+./scRNA_spRNA_cellPro.r -I 06_annotation/06.seu_annotated.rds \
+    -SC orig.ident -CC celltype -GC group -GO control,treat -EC Unknown \
+    -P 07. -O 07_cellPro
+
+# 追加亚型层面比较（对象需有 sub_celltype 列）
+./scRNA_spRNA_cellPro.r -I 06_annotation/06.seu_annotated.rds \
+    -SC orig.ident -CC celltype -SCC sub_celltype -GC group -GO control,treat \
+    -P 07. -O 07_cellPro
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀><细胞类型列>_count_per_sample.csv` | 每个样本 × 每种细胞类型的细胞数 |
+| `<前缀><细胞类型列>_proportion_per_sample.csv` | 每个样本 × 每种细胞类型的占比（行内合计为 1）|
+| `<前缀><细胞类型列>_proportion_stat.csv` | 长表：每行 = 一个（样本 × 细胞类型），含细胞数、占比、所属组 |
+| `<前缀><细胞类型列>_count_per_group.csv` | 每组 × 每种细胞类型的细胞数 |
+| `<前缀><细胞类型列>_proportion_per_group.csv` | 每组 × 每种细胞类型的占比 |
+| `<前缀>bar.png/.pdf` | 100% 堆叠柱状图（按组分面）|
+| `<前缀>sankey.png/.pdf` | 组 → 细胞类型桑基图 |
+| `<前缀><细胞类型列>_DE.png/.pdf` | 逐细胞类型的两组占比比较图（需 `-GO` 恰好两组）|
+| `<前缀><亚型列>_proportion_stat.csv` | 亚型层面的占比长表（需 `-SCC`）|
+| `<前缀><亚型列>_DE.png/.pdf` | 各父细胞类型下的亚型占比比较大图（需 `-SCC`，3 列拼接）|
+
+### 注意事项
+
+- **统计单位是样本**：占比按样本内部归一化（该类型细胞数 ÷ 该样本总细胞数），散点与箱线图里**每个点是一个样本**，不是细胞。
+- **`-GO` 决定是否做检验**：只有 `-GO` 恰好给出两个组时，才输出 `<细胞类型列>_DE` 图并做 Wilcoxon 检验；`-GO` 给三个以上组时，柱状图与桑基图仍会画（按给定顺序分面/上下排列），但不做组间检验。
+- **`-GO` 同时决定显示顺序**：柱状图按组分面时以 `-GO` 顺序排列；桑基图用 `rev(group_order)`，即**对照组在上、处理组在下**。
+- **细胞类型排序按全局丰度降序**（`-EC` 指定的类型钉到末尾），柱状图、桑基图、比较图都用同一顺序，便于跨图对照。
+- **子集过滤**：给了 `-GO` 时，metadata 里不属于这些组的细胞会被**直接剔除**，因此计数表只含 `-GO` 覆盖的组。
+- **`-EC` 只影响绘图顺序**，不影响任何数值（占比仍按全部细胞类型计算）。
+- **Wilcoxon 检验用的是每样本一个比例值**，因此**检验效能完全由每组的样本数决定**：秩和检验在小样本下能达到的最小 p 值有硬下限——每组 3 个样本时最小双侧 p = 0.1，每组 4 个时 = 0.0286，每组 5 个时 = 0.0079。也就是说**每组只有 3 个样本时，这张图不可能出现 `*` 或 `**` 标注**，此时它只能当「差异排序」的参考，不能作为显著性证据。
+- **不显著 ≠ 没有差异**：样本量不足导致的 p 值偏大，不能解读为「两组无差异」。
+- 显著性标注用 `p.signif`（`ns` / `*` / `**` …），`hide.ns = FALSE`，所以不显著的也会标 `ns`。
+- **箱线图在比例极小的类型上会退化**：某组完全缺失该类型时该组只剩一个点，箱体不可见。
+- 代码里 `ggsave(..., heigh = ...)` 是**拼写错误**（应为 `height`），`ggsave` 会静默忽略未知参数——所以 `-DH`（细胞类型比较图高）与 `-SDH`（亚型图高）**实际不生效**，图高由 ggplot 自动决定。`-BH`、`-SW`、`-SH`、`-DW`、`-SDW`（宽度）正常生效。
+- 运行时会出现 ggplot2 的 `size` → `linewidth` 弃用警告（`element_line(size=...)`、桑基 `geom_flow(size=...)`），属正常提示，不影响输出。
+
+### 与 `scRNA_composition_sccoda.py` 的区别
+
+两者都分析「细胞组成比例」，但定位不同：
+
+| | `scRNA_spRNA_cellPro.r`（本脚本）| `scRNA_composition_sccoda.py` |
+|---|---|---|
+| 定位 | 快速描述 + 简单 Wilcoxon 检验 | 正式的成分差异分析（Dirichlet-Multinomial 贝叶斯模型）|
+| 输出 | 计数/占比表 + 柱状图 + 桑基图 + 箱线图 | 可信效应表 + 离散度图 + 效应森林图 + 桑基 |
+| 统计 | 每样本一个比例值 → Wilcoxon | 计数表 → 贝叶斯后验，**给出可信区间，能处理「一类升高导致另一类机械性下降」的成分数据假阳性** |
+| 样本量要求 | 极低（但**每组 ≤ 3 时无法给出显著结果**）| 较高（经验上每组 ≥ 6–8 个样本）|
+| 依赖 | 纯 R | Python + scCODA + R（桑基图）|
+
+成分数据有三个固有性质，决定了这两个脚本的分工：
+
+1. **占比合计恒为 1**：某类型上升必然挤掉其它类型，n 个类型只有 n-1 个独立自由度。逐个独立做检验会把同一次变化拆成「A 升 + B 降」两个发现；scCODA 用参考细胞类型显式处理这个约束。
+2. **比例 ≠ 数量**：两组捕获细胞总数不同时，占比不变但绝对数量可能成倍变化，单看占比会漏掉。
+3. **检验效能由样本量决定**：本脚本的 Wilcoxon 每组样本数少时连 `p<0.05` 都达不到。
+
+建议：**先用本脚本快速看构成、排出可疑的细胞类型，再用 scCODA 对这些类型做正式检验**（前提是样本量满足 scCODA 的要求；不满足时任何方法都给不出可靠结论）。
+
+
+---
+
+## 16 scRNA_SingleR.r（独立脚本）—— 用参考数据集自动推断细胞类型
+
+### 功能
+
+**为细胞群自动推断细胞类型名称**：把查询对象的每个聚类与一份参考数据集做 SingleR 比对，得到「cluster → cell type」的映射，并把推断结果写回 Seurat 对象的 `SingleR` 列。
+
+与 step5（`scRNA_annotate_step5.r`）的区别：step5 是**基于 marker 的人工注释**（你给 cluster→cell type 映射表，脚本负责画图与写对象）；本脚本是**基于参考数据集的自动推断**（参考数据自带标签，脚本去匹配）。两者输出同名信息，但本脚本不需要你预先知道 marker，适合快速摸底或对已有注释做交叉验证。
+
+参考数据三种来源（**互斥，必须给其中一种**）：
+- `-S human` / `-S mouse`：用 celldex 内置参考（`HumanPrimaryCellAtlasData` / `MouseRNAseqData`），首次使用会联网下载并缓存
+- `-RDS`：自己的 Seurat 对象作参考，用 `-AC` 指定其中哪一列是标签
+- `-RD`：自己的 RData（SCE 对象）作参考，用 `-AC` 指定 `colData` 里哪一列是标签
+
+### 输入
+
+- 查询对象：已聚类的 Seurat rds，**必须含 `seurat_clusters` 列**（注释是按 cluster 给出的，不逐细胞）
+- 参考数据：`-S` 内置参考，或 `-RDS` / `-RD` 提供的参考文件
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| 查询用的 Seurat rds，须含 `seurat_clusters` |
+| `-S, --species` | 无 | 内置参考的物种：`human` 或 `mouse` |
+| `-RD, --rdata_file` | 无 | RData 格式的参考（SCE 对象）|
+| `-RDS, --rds_file` | 无 | RDS 格式的参考（Seurat 对象）|
+| `-AC, --annotation_column` | 无 | 参考数据中存放标签的列名；用 `-RD`/`-RDS` 时必填 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 用 celldex 内置小鼠参考
+./scRNA_SingleR.r -I 04_clustering/04.seu_res0.6_clustered.rds -S mouse -P 05. -O 05_SingleR
+
+# 用自己的 Seurat 参考（-AC 指定标签列）
+./scRNA_SingleR.r -I 04_clustering/04.seu_res0.6_clustered.rds -RDS ref_annotated.rds -AC celltype -P 05. -O 05_SingleR
+
+# 用自己的 RData 参考
+./scRNA_SingleR.r -I 04_clustering/04.seu_res0.6_clustered.rds -RD ref.rdata -AC label.main -P 05. -O 05_SingleR
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>SingleR_result.csv` | cluster → cell type 映射表（两列：`Cluster`、`celltype`）|
+| `<前缀>singleR_heatmap.png/.pdf` | SingleR 得分热图（各 cluster 与各参考标签的相似度）|
+| `<前缀>singleR_umap.png/.pdf` | UMAP 按推断出的 `SingleR` 分组着色 |
+| `<前缀>seo_SingleR.rds` | 查询对象 + `SingleR` 元数据列 |
+| `<前缀>SingleR_ref.rdata` | **仅 `-RDS` 模式**：把 RDS 参考转成 RData 存档，后续可直接用 `-RD` 复用，不必重复转换 |
+
+示例输出：`Images/SingleR/`。
+
+### 注意事项
+
+- **三种参考来源互斥**：`-S`、`-RD`、`-RDS` 只能给一个；都不给会报错，给多个也会报错。
+- **注释粒度是 cluster 不是 cell**：脚本用 `seo$seurat_clusters` 作为分组依据，所以输出是「每个聚类一个细胞类型」。输入对象若没有这一列会直接失败。
+- **必须已有聚类结果**：本脚本不做聚类，期望输入是 step4 的产物（含 `seurat_clusters` 与 UMAP）。
+- **UMAP 图要求对象里有 umap reduction**：脚本用 `DimPlot(reduction = "umap")` 出图，输入对象没有 UMAP 会报错。
+- **查询对象用的是 counts 层**（`GetAssayData(..., layer = "counts")`），参考对象则优先用 counts（经 `scater::logNormCounts` 归一化）、无 counts 时退回 data 层。
+- **`-RDS` 参考模式会做一次格式转换**：参考对象按 counts（经 `logNormCounts` 归一化，无 counts 时退回 data 层）转成 SingleCellExperiment，并**保持稀疏矩阵不稠密化**——大参考库请务必用这一模式，不要事先 `as.data.frame()`。
+- **`-RD` 模式下的标签列**：脚本把 `-AC` 指定的列**复制一份**到标准列名 `label.main` 上（SingleR 只读这一列）。**原始 rdata 文件不会被改写**；但若参考文件里本来就有 `label.main` 列，它在本次运行中会被替换成 `-AC` 指向的列——需要保留原标签时，请让参考文件只含一个标签列并直接用它做 `-AC`。
+- **`-AC` 缺省时的行为**：用 `-RD`/`-RDS` 却不给 `-AC` 时，脚本会先打印参考的 metadata 再报错退出，便于你查看有哪些列可用。
+- **自动推断不等于最终注释**：SingleR 只看表达谱相似度，可能给出与实际不符的名字（例如把相近的免疫亚群混淆）。正式结果建议用 step5 的 marker 注释，或至少与 marker 结果交叉核对。
+- **参考标签的粒度决定输出粒度**：参考数据里的标签是细胞类型级还是更细的亚型级，输出就是对应粒度。
+- 运行时会出现 ggplot2 `size` → `linewidth` 的弃用警告，属正常提示，不影响输出。
+
+
+---
+
+## 17 scRNA_spRNA_enrichment.r（独立脚本）—— 差异基因的 GO/KEGG 富集与 GSEA
+
+### 功能
+
+**把差异基因翻译成通路层面的结论**：对每个细胞类型，回答「这个类型里变化的基因主要参与哪些通路？」
+
+脚本做三步：
+
+1. **准备背景基因**：按细胞类型取出该类型中**至少 1 个细胞表达 >1 次**的基因，作为该类型的背景基因集（比「全部基因」作背景更贴合单细胞情境）
+2. **准备差异基因**：从 `-DER` 指定的 DE 结果表里按 `p_val_adj < -p` 且 `|avg_log2FC| > -log2FC` 过滤，再按 `cluster` 列分配到各细胞类型
+3. **调用富集程序**：对每个细胞类型分别调用外部命令 `enrichment_analysis`，做
+   - **GO / KEGG 富集**：以该类型自身检出的基因为背景，检验差异基因在通路上的富集
+   - **GSEA**：用该类型**全部基因**按 `-GM` 指定的指标（默认 `avg_log2FC`）排序做预排序富集，不依赖差异基因阈值
+
+### 重要前提：依赖配套脚本 `enrichment_analysis.r`
+
+**本脚本本身不做富集计算**，它只准备输入文件并通过 `system()` 调用 `enrichment_analysis` 这个命令名。该命令由**配套脚本 `enrichment_analysis.r`**（见第 18 章）提供，内部使用 `clusterProfiler`（`enrichGO` / `enrichKEGG` / `gseGO` / `gseKEGG`）、`enrichplot`、`GseaVis` 和物种对应的注释库 `org.Hs.eg.db` / `org.Mm.eg.db`。
+
+- **命令名不带 `.r` 后缀**：脚本里写的是 `enrichment_analysis`，所以需要让它在 `PATH` 中可用——把 `enrichment_analysis.r` 建立一个名为 `enrichment_analysis` 的软链（或副本）即可，例如：
+  ```bash
+  ln -s "$(pwd)/enrichment_analysis.r" ~/bin/enrichment_analysis
+  ```
+- 若该命令不在 `PATH` 中，脚本仍会正常跑完并生成所有中间文件，但**富集结果为空**，且每个 `<细胞类型>_run.log` 里会记录「command not found」
+- 脚本会把每次调用的完整命令**写成 `<细胞类型>_run.sh` / `<细胞类型>_GSEA_run.sh`** 保存下来，便于手工重跑单个细胞类型
+
+### 输入
+
+- `-I`：已注释的 Seurat rds（用于提取背景基因）
+- `-DER`：DE 结果 csv，需含 `gene`、`cluster`、`p_val_adj`、`avg_log2FC` 列（与 `scRNA_pseudobulk_DE.r` 的输出格式兼容）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| 已注释 Seurat rds |
+| `-DER, --DE_result` | 无（必填）| DE 结果 csv（raw，未过滤）|
+| `-CC, --celltype_column` | 无（必填）| 细胞类型列（与 DE 表的 `cluster` 列对应）|
+| `-GC, --group_column` | 无（必填）| 分组列（用于筛出参与比较的组）|
+| `-G, --groups` | 无 | 参与比较的组（逗号或空格分隔）；只用这些组的细胞算背景基因 |
+| `-A, --assay` | RNA | 取 counts 层的 assay |
+| `-p, --p_threshold` | 0.05 | DE 基因过滤：校正 p 值上限 |
+| `-log2FC, --log2FC_threshold` | 0 | DE 基因过滤：\|avg_log2FC\| 下限 |
+| `-GKP, --GO_KEGG_p_threshold` | 0.05 | GO/KEGG 富集的 p 值阈值 |
+| `-GKQ, --GO_KEGG_q_threshold` | 0.2 | GO/KEGG 富集的 q 值（FDR）阈值 |
+| `-GM, --GSEA_metric` | avg_log2FC | GSEA 的排序指标（DE 表里的列名）|
+| `-GSEA_P` | 0.05 | GSEA 的 p 值阈值 |
+| `-GSEA_Q` | 0.25 | GSEA 的 q 值阈值（GSEA 惯例 0.25）|
+| `-NE, --GSEA_NES` | 1 | GSEA 保留 \|NES\| 大于该值的通路 |
+| `-S, --species` | human | 物种：`human` 或 `mouse`，决定用哪个注释库 |
+| `-IC, --ignore_celltype` | 无 | 要排除的细胞类型（逗号或空格分隔），如 `Unknown` |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_spRNA_enrichment.r -I 05_annotation/05.seu_annotated.rds \
+    -DER 06_pseudobulk/06.treat_vs_control_DE_raw.csv \
+    -CC celltype -GC group -G control,treat -A RNA -S mouse \
+    -IC Unknown -P 07. -O 07_enrichment
+```
+
+### 输出
+
+输出目录 `-O` 下（`<ct>` = 细胞类型）：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀><ct>_bg_genes.csv` | 该细胞类型的背景基因（单列 `Gene`）|
+| `<前缀><ct>_DEGs.txt` | 该细胞类型的差异基因（每行一个）|
+| `<前缀><ct>_GSEA_input.csv` | 该细胞类型 GSEA 的输入表（行名为基因，含排序指标列）|
+| `<前缀><ct>_run.sh` / `<前缀><ct>_GSEA_run.sh` | 对应的外部命令，便于手工重跑 |
+| `<前缀><ct>_run.log` / `<前缀><ct>_GSEA_run.log` | 外部命令的运行日志 |
+| `result/<前缀><ct>_GO_result.csv` | GO 富集结果表 |
+| `result/<前缀><ct>_GO_dotplot.png/.pdf`、`_GO_barplot.png/.pdf` | GO 富集图 |
+| `result/<前缀><ct>_KEGG_result.csv` | KEGG 富集结果表 |
+| `result/<前缀><ct>_KEGG_dotplot.png/.pdf`、`_KEGG_barplot.png/.pdf` | KEGG 富集图 |
+| `result/<前缀><ct>_GSEA_GO_raw_result.csv`、`_GSEA_GO_filtered_result.csv` | GSEA 的 GO 结果（全部 / 按阈值过滤）|
+| `result/<前缀><ct>_GSEA_GO.png/.pdf` | GSEA 的 GO 图 |
+| `result/<前缀><ct>_GSEA_KEGG_raw_result.csv`、`_GSEA_KEGG_filtered_result.csv` | GSEA 的 KEGG 结果 |
+| `result/<前缀><ct>_GSEA_KEGG.png/.pdf` | GSEA 的 KEGG 图 |
+
+示例输出：`Images/enrichment/`。
+
+`result/` 子目录由脚本自动创建，所有富集产物都写在里面。
+
+### 注意事项
+
+- **细胞类型数不足 10 个则跳过**：背景基因少于 10 个、或差异基因少于 10 个的细胞类型会被丢弃（打印 `less than 10, discard it !`），对应的文件不会生成。
+- **背景基因的过滤条件是 `rowSums(counts > 1) > 0`**：即该基因至少在一个细胞里表达 >1 次。
+- **GO/KEGG 与 GSEA 的输入不同**：GO/KEGG 用「该类型的差异基因 vs 该类型的背景基因」；GSEA 用「该类型全部基因按 log2FC 排序」，**不经过差异基因阈值过滤**。所以 GSEA 能检出那些「整体一致但幅度不大」的通路，与 GO 富集互补。
+- **DE 表必须与对象对齐**：`-DER` 的 `cluster` 列要与 `-CC` 指定的列取值一致，否则该类型的差异基因数为 0 而被跳过。
+- **物种必须在 DE 结果准备好之前确定**：`-S` 决定注释库（human→`org.Hs.eg.db`，mouse→`org.Mm.eg.db`），选错会导致基因 ID 全部匹配不上、结果为空。
+- **富集是后台并行的**：外部命令以 `&` 结尾并发执行，脚本本身会先返回。**脚本显示「All Done」不代表富集已跑完**——需等 `result/` 里的文件出现，或查看 `*_run.log`。
+- **KEGG 需要联网**：KEGG 富集会调用 KEGG REST API；离线环境只有 GO 部分可用。
+- **`-G` 指定的组之外**的细胞不参与背景基因统计，但不影响差异基因的取用（差异基因来自 DE 表）。
+
+
+---
+
+## 18 enrichment_analysis.r（配套脚本）—— GO/KEGG 富集与 GSEA 的实际执行者
+
+### 功能
+
+**执行通路富集计算本身**：`scRNA_spRNA_enrichment.r` 只负责准备输入文件，真正的富集由本脚本完成。本脚本面向的是「一组基因 → 这些基因富集在哪些 GO 术语 / KEGG 通路上」这一问题，既可用于单细胞（逐细胞类型调用），也可直接用于 bulk RNA。
+
+两种分析模式：
+
+- **GO / KEGG 富集（`-G`）**：给定目标基因列表，用 `enrichGO` / `enrichKEGG` 检验它们在通路上的富集程度。给 `-E` 时以该文件里的基因为背景（universe），不给则用注释库的默认背景。
+- **GSEA（`-GSEA` + `-GM`）**：给定全基因排序表（如按 log2FC 排序），用 `gseGO` / `gseKEGG` 做预排序富集，输出 NES 与 p/q 值。**不依赖差异基因阈值**，能检出「整体一致变化但幅度不大」的通路。
+
+### 输入
+
+两种分析模式对应两种输入（`-G` 与 `-GSEA` 互斥）：
+
+| 模式 | 输入 | 含义 |
+|---|---|---|
+| GO / KEGG 富集 | `-G` 基因列表文件（每行一个基因符号，至少 10 个）| 要检验这些基因在通路上的富集；`-E` 可另给背景基因文件（行名为基因符号），不给则用注释库默认背景 |
+| GSEA | `-GSEA` 排序表（行名为基因符号）+ `-GM` 排序指标列名 | 全基因按某指标排序后做预排序富集，不依赖差异基因阈值 |
+
+### 重要前提
+
+- **`-S` 决定物种**：human → `org.Hs.eg.db`，mouse → `org.Mm.eg.db`。选错会导致基因 ID 全部匹配不上、结果为空。
+- **`-M` 可切换 KEGG 数据源**：默认走在线 KEGG REST API；加 `-M` 则改用 MSigDB 内置的 KEGG 基因集（v2025.1），**网络不稳定或离线时推荐加这个参数**。
+- **KEGG 在线模式需要联网**。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-G, --genes` | 无 | 目标基因文件（每行一个基因，至少 10 个）。与 `-GSEA` 互斥 |
+| `-E, --expr` | 无 | 背景基因文件（行名为基因符号）。给了 `-E` 就必须给 `-G` |
+| `-S, --species` | human | `human` 或 `mouse` |
+| `-p, --pvalue` | 0.05 | 显著通路的 p 值阈值 |
+| `-Q, --qvalue` | 0.2 | 显著通路的 q 值（FDR）阈值；GSEA 建议 0.25 |
+| `-GSEA, --GSEA_file` | 无 | GSEA 输入表（行名为基因符号）。必须与 `-GM` 同时给 |
+| `-GM, --GSEA_metric` | 无 | GSEA 的排序指标列名 |
+| `-NE, --NES_threshold` | 1 | GSEA 保留 \|NES\| 大于该值的通路 |
+| `-M, --MSigDB` | FALSE | 改用 MSigDB 的 KEGG 基因集，不走在线 KEGG |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# GO/KEGG 富集（自带背景基因）
+enrichment_analysis -G genes.txt -E bg_genes.csv -S mouse -P 01. -p 0.05 -Q 0.2 -O result/
+
+# GSEA（离线时加 -M）
+enrichment_analysis -GSEA GSEA_input.csv -GM avg_log2FC -S mouse -NE 1 -p 0.05 -Q 0.25 -M -P 02. -O result/
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>GO_result.csv` | GO 富集结果表（BP / MF / CC 合并）|
+| `<前缀>GO_dotplot.png/.pdf`、`<前缀>GO_barplot.png/.pdf` | GO 富集图（按 ontology 分面）|
+| `<前缀>KEGG_result.csv` | KEGG 富集结果表 |
+| `<前缀>KEGG_dotplot.png/.pdf`、`<前缀>KEGG_barplot.png/.pdf` | KEGG 富集图 |
+| `<前缀>GSEA_GO_raw_result.csv` | GSEA 的 GO 全部结果 |
+| `<前缀>GSEA_GO_filtered_result.csv` | 按 `-p`/`-Q`/`-NE` 过滤后的 GSEA GO 结果 |
+| `<前缀>GSEA_GO.png/.pdf` | GSEA 的 GO 图 |
+| `<前缀>GSEA_KEGG_raw_result.csv`、`<前缀>GSEA_KEGG_filtered_result.csv` | GSEA 的 KEGG 结果（全部 / 过滤后）|
+| `<前缀>GSEA_KEGG.png/.pdf` | GSEA 的 KEGG 图 |
+
+### 注意事项
+
+- **`-G` 与 `-GSEA` 互斥**，同时给会报错；`-E` 不能单独给。
+- **`-GSEA` 与 `-GM` 必须成对出现**，只给其一也会报错。
+- **基因标识符用 SYMBOL**：注释库的 `keyType = "SYMBOL"`，输入文件必须是基因符号，不能是 Ensembl ID 或 Entrez ID。
+- **目标基因少于 10 个时结果无意义**，脚本不做检查，需自行保证。
+- **GO 富集做 BH 校正**（`pAdjustMethod = "BH"`），`universe` 背景只在给了 `-E` 时生效。
+- **`-E` 的背景文件格式**：第一行是表头、每行一个基因符号，读取时用行名（`read.csv(row.names = 1)`）。`scRNA_spRNA_enrichment.r` 生成的 `<细胞类型>_bg_genes.csv` 是「表头 `Gene` + 一列基因」的格式，可直接使用。
+- **KEGG 的基因 ID 需先转成 ENTREZID**，`readable = TRUE` 会把结果转回符号名。
+- **输出目录会自动创建**，不存在时递归建。
+- 运行时会打印 ggplot2 `size` → `linewidth` 的弃用警告，属正常提示。
+
+
+---
+
+## 19 scRNA_GSVA_enrichment.r（独立脚本）—— GSVA 通路活性打分与组间比较
+
+### 功能
+
+**不依赖差异分析结果，直接回答「哪些通路的活性在两组之间不一样」**：对每个细胞类型，用 GSVA 把表达谱转换成通路活性分数，再比较两组之间每条通路的分数差异。
+
+与 `scRNA_spRNA_enrichment.r` 的分工：那一个要先有 DE 结果、用「差异基因 vs 背景基因」做通路富集；本脚本**只用表达谱**，把每条通路在每个样本上的活性算出来再比较，因此不受「差异基因阈值」限制，也能检出「整体一致变化但单个基因幅度不大」的通路。
+
+四步流程：
+
+1. **伪 bulk 聚合**：用 `AggregateExpression` 按「样本 × 细胞类型」把 counts 求和
+2. **归一化**：log2(CPM + 1)
+3. **GSVA 打分**：从 msigdbr 取三套基因集——GO:BP（`C5`）、KEGG MEDICUS（`C2`）、REACTOME（`C2`），对每个细胞类型单独算 GSVA 分数
+4. **组间比较**：用 limma（`~ 0 + group`）对每条通路做两组比较，输出 logFC / P.Value / adj.P.Val，并按细胞类型画通路热图
+
+### 输入
+
+- 已注释的 Seurat rds，需含细胞类型列、样本列、分组列三列
+- 样本列必须是**生物学重复**（每个样本一个独立个体），pseudobulk 聚合与组间比较都以此为单位
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| Seurat rds |
+| `-AC, --annotation_column` | 无（必填）| 细胞类型列 |
+| `-SC, --sample_column` | 无（必填）| 样本列（生物学重复）|
+| `-GC, --group_column` | 无（必填）| 分组列 |
+| `-G, --groups` | 无 | 要比较的两组，逗号分隔。**第一个是对照组，第二个是处理组** |
+| `-S, --species` | 无（必填）| `human` 或 `mouse` |
+| `-A, --assay` | RNA | 使用的 assay |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_GSVA_enrichment.r -I 05_annotation/05.seu_annotated.rds \
+    -AC celltype -SC orig.ident -GC group -G control,treat -S mouse \
+    -P 08. -O 08_GSVA
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>GSVA_score.csv` | 全部细胞类型的 GSVA 分数长表：`celltype`、`pathway`、各样本的分数、`geneset`（该通路的基因列表）|
+| `<前缀>GSVA_DE_result.csv` | 逐细胞类型的通路差异结果（limma 的 logFC / P.Value / adj.P.Val / AveExpr / t 等 + `pathway`、`celltype`、`contrast`）|
+| `<前缀>GSVA_heatmap_<细胞类型>.png/.pdf` | 该细胞类型的通路热图：行=通路（按数据库与上/下调分组），列=样本（左为对照组、右为处理组），右侧标注数据库来源 |
+
+示例输出：`Images/GSVA_enrichment/`。
+
+### 注意事项
+
+- **组别顺序有含义**：`-G` 的第一个是**对照组**、第二个是**处理组**，对比方向写成 `<处理组> - <对照组>`。热图的列顺序也按此排列（对照组在左）。
+- **每组至少 3 个样本**：不足 3 个的细胞类型会被跳过（打印 `insufficient samples per group`）。
+- **热图颜色是 GSVA 活性分数，不是差异倍数也不是 p 值**：每列是一个样本、每行是一条通路，颜色只反映该样本在该通路上的分数高低。**热图里的通路不一定显著**——筛选是三层降级（`adj.P.Val < 0.05` → `P.Value < 0.05` → 按 `|logFC|` 排序，日志会打印用了哪一层），且每库每方向只取 `|logFC|` 前 10 条；显著性只能回查 `GSVA_DE_result.csv` 的 adj.P.Val。热图的价值在于直观看组间分离趋势（如对照组一片低、处理组一片高）。
+- **每个数据库各取上/下调前 10 条**：所以一张热图最多 3 个库 × 2 个方向 × 10 = 60 行。
+- **样本名里的连字符会被换成下划线**：为了与 GSVA 输出矩阵的列名匹配，样本名中的 `-` 统一转成 `_`。
+- **细胞类型名含下划线或空格时要注意**：脚本用「列名以 `_细胞类型` 结尾」来定位某个细胞类型的列，若细胞类型名本身以下划线结尾或含特殊字符，可能定位不准。
+- **msigdbr 首次运行需要联网**下载基因集，之后会缓存。
+- **GO 用的注释库是 GO:BP**（`C5` 集合的 BP 子集），不含 MF 与 CC。
+- **输出的是通路活性差异，不是基因差异**：`GSVA_DE_result.csv` 里的 `pathway` 列对应通路的 MSigDB 名称（如 `GOBP_XXX`、`KEGG_XXX`、`REACTOME_XXX`）。
+
+
+---
+
+## 20 scRNA_genesetScore.r（独立脚本）—— 自定义基因集活性打分
+
+### 功能
+
+**给一份自己指定的基因集打分，看它在各细胞类型（或各细胞）里的活性高低**：读取基因集文件，算出 GSVA / ssGSEA / AddModuleScore / AUCell 四种分数，并画出对应的图。
+
+与另外两个富集脚本的分工：
+
+| 脚本 | 基因集来源 | 回答什么 |
+|---|---|---|
+| `scRNA_genesetScore.r` | **你自己提供的基因集文件** | 这个基因集在哪些细胞类型 / 细胞里更活跃 |
+| `scRNA_GSVA_enrichment.r` | msigdbr（GO:BP / KEGG / REACTOME）| 两组之间哪些**通路活性**有差异 |
+| `scRNA_spRNA_enrichment.r` | msigdbr（GO / KEGG）| 差异基因落在哪些**通路上** |
+
+四种打分方法的分工：
+
+| 方法 | 层级 | 特点 |
+|---|---|---|
+| **GSVA** | 细胞类型（pseudobulk）| 基于基因集在排序中的分布打分 |
+| **ssGSEA** | 细胞类型（pseudobulk）| 与 GSVA 同为排序类方法，但走的是单样本积分 |
+| **AddModuleScore** | 单细胞 | Seurat 内置，取基因集均值减去对照基因集均值 |
+| **AUCell** | 单细胞 | 基于排名曲线下面积，对基因表达量级不敏感 |
+
+前两种把细胞按类型聚合成 pseudobulk 后打分（横向 barplot），后两种逐细胞打分（画在 UMAP 上）。
+
+### 输入
+
+- `-I`：已注释的 Seurat rds（需有 UMAP，用于画单细胞图）
+- `-G`：**基因集文本文件，每行一个基因符号**（必填）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| Seurat rds |
+| `-G, --geneset` | 无（必填）| 基因集文件，每行一个基因符号 |
+| `-AC, --annotation_column` | 无 | 细胞类型列名；脚本用 `Idents(seu) <- <该列>` 后按 Idents 聚合 |
+| `-A, --assay` | RNA | 使用的 assay |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_genesetScore.r -I 05_annotation/05.seu_annotated.rds \
+    -G geneSet.txt -AC celltype -A RNA -P 09. -O 09_genesetScore
+```
+
+基因集文件格式（每行一个符号）：
+
+```
+GeneA
+GeneB
+GeneC
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>GSVA_ssGSEA_score.csv` | 各细胞类型的 GSVA 与 ssGSEA 分数（两列合并）|
+| `<前缀>GSVA_score_barplot.png/.pdf` | GSVA 分数横向柱状图：正值红、负值蓝，按分数排序 |
+| `<前缀>ssGSEA_score_barplot.png/.pdf` | ssGSEA 分数横向柱状图（统一浅蓝），按分数降序 |
+| `<前缀>AddModuleScore_UMAP.png/.pdf` | AddModuleScore 的 UMAP 特征图（灰→红）|
+| `<前缀>AUCell_score_UMAP.png/.pdf` | AUCell 分数的 UMAP 特征图（灰→红）|
+| `<前缀>seu_genesetScore.rds` | 写入了 `AUCell_score`（以及 AddModuleScore）列的对象 |
+
+示例输出：`Images/genesetScore/`。
+
+### 注意事项
+
+- **细胞类型聚合依赖 `-AC`**：脚本先执行 `Idents(seu) <- annotation_column`，再用 `AggregateExpression`（未指定 `group.by`，即按 Idents 聚合）。因此 `-AC` 必须给出对象里真实存在的列名；不给或写错会导致聚合结果异常。
+- **基因集里找不到的基因会被丢弃**：脚本会打印「读入多少个 / 去重后多少个 / 在对象中找到多少个 / 没找到多少个」，并列出缺失的基因名。**基因集与对象物种/基因名版本不一致时缺失会很多**，此时分数不可信。
+- **基因集在对象里至少要有一些基因**：全部缺失时 GSVA 会报错。
+- **GSVA 与 ssGSEA 的分数不可直接比较**：两者尺度不同，只在同一方法内部横向比较细胞类型。
+- **GSVA 分数的正负只表示方向**：正值表示该基因集在排序中偏靠前（相对更活跃），负值表示偏后，不代表「有」或「无」表达。
+- **单细胞方法（AddModuleScore / AUCell）需要对象里有 UMAP**，否则出图会报错。
+- **AUCell 会覆盖对象里的 `AUCell_score` 列**（若已存在同名列）。
+- 运行时会打印 GSVA 的计算进度与基因集匹配信息，属正常提示。
+
+
+---
+
 ## 附录：环境与依赖
 
 **R 侧**（主流程各步与独立 R 脚本）：
@@ -1081,6 +1736,13 @@ celltypeB,0.8
 - 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认路径）；可选 `sceasy`（经 reticulate，其配套 Python 环境需预装 `numpy` + `anndata`）
 - 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
 - 亚型聚类（`scRNA_subcelltype_clustering.r`）：`clustree`、`harmony`、`reticulate`（Leiden 时需 `leidenalg`）、`patchwork`
+- 差异表达火山图与 pseudobulk DE（`scRNA_pseudobulk_DE.r`）：`ggrepel`（标签避让）、`RColorBrewer`、`scales`；细胞类型 > 66 时另需 `viridis`
+- pseudobulk 差异表达（`scRNA_pseudobulk_DE.r`）：`DESeq2`（Bioconductor）、`Seurat`、`Matrix`、`tidyverse`、`ggrepel`、`RColorBrewer`、`scales`
+- 细胞比例分析（`scRNA_spRNA_cellPro.r`）：`ggalluvial`（桑基图）、`ggpubr`（显著性标注）、`patchwork`（亚型图拼接）、`tidyverse`、`Seurat`、`RColorBrewer`、`scales`
+- 自动注释（`scRNA_SingleR.r`）：`SingleR`、`SingleCellExperiment`、`scater`（参考对象的 logNormCounts）、`celldex`（内置 human/mouse 参考）、`Seurat`、`tidyverse`
+- 通路富集（`scRNA_spRNA_enrichment.r` + 配套 `enrichment_analysis.r`）：主脚本只准备输入文件，实际富集由配套脚本执行（需要 `clusterProfiler`、`enrichplot`、`GseaVis`、`org.Hs.eg.db`/`org.Mm.eg.db`）
+- 通路活性打分（`scRNA_GSVA_enrichment.r`）：`GSVA`、`msigdbr`（GO:BP / KEGG MEDICUS / REACTOME 基因集）、`limma`（组间比较）、`ComplexHeatmap`（热图）、`Seurat`、`tidyverse`
+- 自定义基因集打分（`scRNA_genesetScore.r`）：`GSVA`（GSVA + ssGSEA）、`AUCell`、`Seurat`（AddModuleScore）、`tidyverse`
 
 **Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）：
 
