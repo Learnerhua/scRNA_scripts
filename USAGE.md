@@ -34,6 +34,10 @@
 | `scRNA_spRNA_enrichment.r` | **把差异基因翻译成通路层面的结论**：逐细胞类型做 GO/KEGG 富集与 GSEA，把「哪些基因变了」变成「哪些通路变了」 | 注释 rds + DE 结果 csv → 富集表 + 图 |
 | `scRNA_GSVA_enrichment.r` | **比较两组之间的通路活性差异**：不依赖差异分析结果，直接用 GSVA 给每个细胞类型算通路活性分数并做组间检验 | 注释 rds → 通路分数表 + 差异表 + 热图 |
 | `scRNA_genesetScore.r` | **给自定义基因集打分**：算 GSVA / ssGSEA / AddModuleScore / AUCell 四种分数，看这个基因集在哪些细胞类型或细胞里更活跃 | 注释 rds + 基因集文件 → 分数表 + 4 类图 |
+| `scRNA_DoubleFinder.r` | **替代方案**：同样去双细胞与环境污染，但改用 DoubletFinder 且整体（不逐样本）处理；用于与 step2 交叉验证 | 合并 rds → 干净 rds |
+| `scRNA_ROC.r` | **评估目标基因的组间判别能力**：逐基因在样本层面算 AUC 并画 ROC 曲线，给出按 AUC 排序的汇总表 | 注释 rds + 分组 csv + 基因列表 → AUC 表 + ROC 曲线 |
+| `scRNA_cellchat_single.r` | **推断细胞类型之间的通讯信号**：用 CellChat 找出谁给谁发什么信号、走哪条通路，并给出网络图与通讯模式 | 注释 rds → 通讯表 + 网络图 + 模式图 |
+| `scRNA_cellchat_compare.r` | **比较两组的通讯网络差异**：合并两个 CellChat 对象，逐项对比通讯数量、强度与通路组成 | 两个 CellChat rds → 合并对象 + 对比图 |
 | `enrichment_analysis.r` | **配套脚本**：执行实际的 GO/KEGG 富集与 GSEA（第 17 章脚本调用它）| 基因列表 / 排序表 → 富集表 + 图 |
 | `sankey_composition.r` | **配套脚本**：用 `ggalluvial` 渲染细胞组成桑基图（第 8 章脚本调用它）| 组成占比表 → 桑基图 |
 
@@ -53,6 +57,7 @@
 - DE 结果拿到之后，想知道「这些差异基因背后是哪条通路在变」用 `scRNA_spRNA_enrichment.r`：它逐细胞类型做 GO/KEGG 富集（用该类型自身检出的基因作背景）与 GSEA（用全基因按 log2FC 排序），输出各通路的 p/q 值、NES 与 dotplot/barplot。
 - 想比较「两组之间哪些通路的活性不一样」但手上还没有 DE 结果时，用 `scRNA_GSVA_enrichment.r`：它按「样本 × 细胞类型」聚合成伪 bulk，算 log2(CPM+1) 后用 GSVA 打分（GO:BP / KEGG MEDICUS / REACTOME 三套基因集），再用 limma 在样本层面比较两组。它与 `scRNA_spRNA_enrichment.r` 互补：前者看「通路活性」，后者看「差异基因落在哪些通路上」。
 - 想看「某个自定义基因集在哪些细胞类型里更活跃」用 `scRNA_genesetScore.r`：它同时给 GSVA / ssGSEA（细胞类型层面）与 AddModuleScore / AUCell（单细胞层面）四种分数，可互相印证，也能看出这个基因集是不是被某一个细胞类型特异性表达。
+- 去双细胞有两个脚本，**二选一，不要串联**：`scRNA_dedoublets_step2.r`（主流程推荐，scDblFinder，逐样本建模、双细胞率可自动估计、输出只保留 counts） 与 `scRNA_DoubleFinder.r`（替代方案，DoubletFinder，整体处理、双细胞率需手填 `-DR`）。后者主要用于**交叉验证**——两者是独立算法，结论差异大时值得警惕。
 - 独立脚本不依赖主流程的步骤顺序：`scRNA_gene_expr.r`、`scRNA_gene_DE.r` 需要一个含 celltype 列的已注释 Seurat 对象（典型来源是 step5 的 `seu_annotated.rds`）；`scRNA_composition_sccoda.py` 直接读 h5ad 或样本 × 细胞类型计数表，与主流程无关。
 - 脚本会识别已存在的关键产物作为缓存（通常只重画图、不重算），强制重跑时删除对应 rds 即可。
 
@@ -66,6 +71,7 @@
 |---|---|---|
 | `Images/01_QC/` | `scRNA_QC_step1.r` | QC 前后小提琴图 / 散点图 |
 | `Images/02_deContamination/` | `scRNA_dedoublets_step2.r` | doublet UMAP、doublet/QC 指标小提琴图 |
+| `Images/DoubleFinder/` | `scRNA_DoubleFinder.r` | 替代方案的产物：doublet UMAP、doublet 小提琴图、DecontX 污染 UMAP |
 | `Images/03_Nor_Harmony/` | `scRNA_Nor_harmony_step3.r` | PCA dimplot、PC elbow、HVG、Harmony dimplot |
 | `Images/04_clustering/`、`Images/04_clustering_louvain/` | `scRNA_clustering_step4.r` | clustree、cluster / sample / group UMAP、各 cluster dotplot（两个目录为同一分析在 Leiden / Louvain 下的示例） |
 | `Images/05_annotation/` | `scRNA_annotate_step5.r` | celltype UMAP、celltype × marker dotplot、`-S` 模式下每 cell type 一张 dotplot |
@@ -79,6 +85,9 @@
 | `Images/enrichment/` | `scRNA_spRNA_enrichment.r` | GO 富集 dotplot / barplot、KEGG 富集 dotplot / barplot、GSEA 的 GO 与 KEGG 图 |
 | `Images/GSVA_enrichment/` | `scRNA_GSVA_enrichment.r` | 通路活性热图：行 = 通路（按 GOBP / KEGG / REACTOME 分区），列 = 样本（对照组在左），右侧标注数据库来源 |
 | `Images/genesetScore/` | `scRNA_genesetScore.r` | GSVA 分数柱状图、ssGSEA 分数柱状图、AddModuleScore 与 AUCell 的 UMAP 特征图 |
+| `Images/ROC/` | `scRNA_ROC.r` | 目标基因的 ROC 曲线图（示例为判别能力强、中等、弱三档）|
+| `Images/cellchat/single/` | `scRNA_cellchat_single.r` | 单对象分析的**全部 16 类图**：总体网络圈图、逐发送方圈图、top9 信号通路弦图、selectK 参考图、通讯模式热图/河流图/点图、通路 LR 贡献与表达图、信号角色网络与散点、贡献最大的 LR 对圈图、全部 LR 对气泡图 |
+| `Images/cellchat/compare/` | `scRNA_cellchat_compare.r` | 两组对比的**全部 12 类图**：通讯数量/强度对比柱状图、差异网络圈图、2×2 总体圈图、强度对比热图、信号角色 2D 散点、通路功能相似性聚类与排名、组间差异显著通路图、outgoing 通路热图、LR 对比较气泡图（含只显示增强部分）、差异最大通路的 LR 表达对比 |
 
 各章「输出」小节末尾给出对应的示例目录。示例图仅用于展示输出形式与排版，其文件名与各章输出的 `<前缀><文件名>` 规则一致。
 
@@ -612,7 +621,7 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 | `-CT, --celltypes` | 空 | 要画柱状图 + 箱线图的细胞类型（逗号分隔） |
 | `-SO, --sample_order` | 空 | **柱状图**的样本顺序（左→右）；留空用表内顺序。不影响热图/箱线图 |
 | `-GO, --group_order` | 空 | **箱线图**的分组顺序（左→右）；留空按字典序。首个为参照组 |
-| `--alt` | auto | 箱线图检验方向：`auto`（等效 `less`，即右侧组 > 左侧组）/ `two.sided` / `greater` / `less` |
+| `--alt` | **two.sided** | 箱线图 Wilcoxon 检验方向：`two.sided`（默认，无方向）/ `auto`（等效 `less`，即右侧组 > 左侧组）/ `greater` / `less` |
 | `--signif_bar` | auto | 是否画箱线图显著性横线；`none` 关闭 |
 | `--bar_gap` | 0.5 | 箱线图横线距最高数据点的间距（y 轴 padding 的倍数），越大越远 |
 | `--col_order` | **hclust** | **热图列顺序**：`hclust`（默认）= 按样本表达谱聚类（列 z-score 后 Euclidean 距离 + complete linkage），让表达模式相近的细胞类型相邻；`csv` = 保持表内顺序 |
@@ -651,7 +660,7 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 | `<前缀><基因名>_heatmap.png/.pdf` | **热图** — sample × celltype，按 celltype 列 z-score，NAVY → WHITE → FIREBRICK，范围 [-3, 3]，图例标题为 **Expression**（注意：图例文字为 Expression，但色阶实际是 z-score 值）|
 | `<前缀><基因名>_<celltype>_barplot.png/.pdf` | **柱状图** — 该 celltype 各样本的绝对平均表达量（每 `-CT` 一项一张） |
 | `<前缀><基因名>_<celltype>_boxplot.png/.pdf` | **箱线图** — 该 celltype 两组的样本级比较 + Wilcoxon p + 显著性横线 |
-| `<前缀><基因名>_boxplot_stats.csv` | **检验结果表** — 每个 celltype 一行：分组细胞数、中位数、均值、检验名、p 值 |
+| `<前缀><基因名>_boxplot_stats.csv` | **检验结果表** — 每个 celltype 一行：分组细胞数、中位数、均值、检验名、`p_value`、`p_adj`（对同一基因的各细胞类型做 BH 校正）|
 | `<前缀>GeneDE_summary.txt` | 参数与统计汇总 |
 
 示例输出：`Images/gene_DE/`。
@@ -660,7 +669,9 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 
 - **单基因输入**：`-G` 必须是单个基因符号；要批量分析请循环调用脚本
 - **缺失组合填 0**：某 sample × celltype 无细胞时对应值为 0。注意这与"真实零表达"不可区分——箱线图中若某样本该 celltype 无细胞，其 0 会参与检验，解读时须结合每组细胞数
-- **箱线图的点 = 样本，不是细胞**：用细胞做重复会产生伪重复（p 值被细胞数撑到 1e-16）。每组样本数少时要留意检验的分辨率下限——如 4 vs 3 的两侧 Wilcoxon 最小可能 p 为 2/C(7,4) = 0.0571，无论差异多大都无法 < 0.05
+- **箱线图的点 = 样本，不是细胞**：用细胞做重复会产生伪重复（p 值被细胞数撑到 1e-16）。
+- **默认是双侧检验**（`--alt two.sided`）：两侧 Wilcoxon 在两组完全分离时的最小 p 值为 `2/C(n1+n2, n1)` —— 3 vs 3 时 = 0.1、3 vs 4 时 = 0.0571、4 vs 4 时 = 0.0286、5 vs 5 时 = 0.0079。也就是说**每组只有 3 个样本时，双侧检验无论差异多大都不可能 < 0.05**，此时箱线图只能看差异方向和幅度，不能作显著性结论。单侧检验（`--alt less/greater`）的最小 p 是双侧的一半（3 vs 3 为 0.05），但方向必须在看数据之前就确定，否则属事后选择。
+- **`p_adj` 是 BH 校正值，校正范围是同一次运行里各细胞类型的检验**：脚本一次只处理一个基因，所以校正族 = 该基因在 `-CT` 指定的各个细胞类型上的检验。跨基因不做校正——若要比较多个基因，请自行在合并后的表上再校正一次。无法检验的细胞类型（某组样本数 < 2）`p_value` 为 `NA`，`p_adj` 也是 `NA`，但仍计入校正的检验个数。
 - **箱线图显著性横线**：横线锚定在"最高数据点之上"（`--bar_gap` 控制距离），否则 y 轴上限会裁掉最高样本；两端小竖线朝下。若日志出现 `Removed N row ... (stat_boxplot())` 说明有样本被裁掉
 - **箱线图用经典 Tukey 规则（`--box_coef 1.5`）**：须线终点是"围栏（Q3+1.5×IQR）内**最远的那个数据点**"，**不是围栏值本身**。超出围栏的样本画成**空心黑圆**并**从散点层剔除**（避免同一样本画两次）。
 - **箱线图须线可能为 0（小样本陷阱）**：ggplot2 的 `geom_boxplot` 用 **type-7 分位数**算 Q1/Q3。当 n 很小（如 4）且存在远点时，Q3 会被拉到高于所有非离群值，导致上须线长度为负 → 画不出来（该样本改由空心圆标出）。例如某组 4 个值为 `10, 20, 30, 100`：type-7 分位数给出 Q1 = 17.5、Q3 = 47.5、IQR = 30、围栏上界 = 92.5；最大值 100 超出围栏被判为离群点，而围栏内最大的非离群值（30）**小于** Q3（47.5）→ 上须线长度为负，无法绘制。
@@ -1285,7 +1296,7 @@ CSV 列名固定为 `gene,p_val,avg_log2FC,pct.1,pct.2,p_val_adj,cluster`（`clu
 - **不显著 ≠ 没有差异**：样本量不足导致的 p 值偏大，不能解读为「两组无差异」。
 - 显著性标注用 `p.signif`（`ns` / `*` / `**` …），`hide.ns = FALSE`，所以不显著的也会标 `ns`。
 - **箱线图在比例极小的类型上会退化**：某组完全缺失该类型时该组只剩一个点，箱体不可见。
-- 代码里 `ggsave(..., heigh = ...)` 是**拼写错误**（应为 `height`），`ggsave` 会静默忽略未知参数——所以 `-DH`（细胞类型比较图高）与 `-SDH`（亚型图高）**实际不生效**，图高由 ggplot 自动决定。`-BH`、`-SW`、`-SH`、`-DW`、`-SDW`（宽度）正常生效。
+- **所有宽高参数都正常生效**：`-BW`/`-BH`（堆叠柱状图）、`-SW`/`-SH`（桑基图）、`-DW`/`-DH`（细胞类型比较图）、`-SDW`/`-SDH`（亚型比较图），单位均为英寸。
 - 运行时会出现 ggplot2 的 `size` → `linewidth` 弃用警告（`element_line(size=...)`、桑基 `geom_flow(size=...)`），属正常提示，不影响输出。
 
 ### 与 `scRNA_composition_sccoda.py` 的区别
@@ -1722,6 +1733,345 @@ GeneC
 
 ---
 
+## 21 scRNA_DoubleFinder.r（替代方案）—— 用 DoubletFinder 去双细胞
+
+### 功能
+
+**与第 2 章的 `scRNA_dedoublets_step2.r` 做同一件事**（去双细胞 + 可选 DecontX 去环境 RNA），但用**不同的算法**和**不同的处理粒度**。
+
+它是一个**替代方案**，不是主流程的一步。**二选一使用，不要串联**（串联会重复去双细胞）。
+
+### 与主流程 step2 的区别
+
+| | `scRNA_dedoublets_step2.r`（主流程，推荐） | `scRNA_DoubleFinder.r`（本脚本，替代方案） |
+|---|---|---|
+| 双细胞算法 | **scDblFinder**（Bioconductor）| **DoubletFinder**（CRAN）|
+| 处理粒度 | **逐样本**（`samples = -SC`）| **整个合并对象一起** |
+| DecontX | 逐样本跑，**逐样本**算 90% 分位阈值 | 整个对象跑，**全局** 90% 分位阈值 |
+| 双细胞率 | 可传；不传时 scDblFinder **自动估计** | **必须手填** `-DR`（默认 0.075 是通用经验值，不是你的数据实际的）|
+| pK / pN | 不需要 | 需 `paramSweep` 扫 pK + `find.pK` 取最优（这一步较慢）；pN 固定 0.25 |
+| 同型双细胞校正 | scDblFinder 内部处理 | 用 `modelHomotypic` 估算后调整期望双细胞数 |
+| 输出对象 | `seu_clean.rds`（**只保留 counts 层**，轻量）| `seo_deCont.rds`（保留全部层，含 data/scale/PCA/UMAP/聚类）|
+| 汇总记录 | 有 `Dedoublets_summary.txt`（每样本前后细胞数、双细胞统计）| 无，只打印到终端 |
+| 缓存跳过 | 有（检测到 `seu_doublets.rds` 就只重画图）| 无 |
+| 图尺寸 | 可调 `-W` / `-H` | 写死 |
+| 版权年份 | 2026 | 2025 |
+
+### 选择依据
+
+**默认用 step2（scDblFinder）**，理由：
+- **逐样本建模**：双细胞率是样本内概念（每个样本的 loading rate 不同）。本脚本把多样本混在一起算期望双细胞数 `nExp = double_rate × 总细胞数`，样本间的 loading 差异被抹平——样本数多、每样本细胞数差异大时更吃亏
+- **双细胞率可自动估计**：scDblFinder 在 `dbr = NULL` 时会按数据估计；本脚本的 `-DR` 只是个假设值
+- 输出更轻，且带 summary 与缓存
+
+**什么时候用本脚本（DoubleFinder）**：
+- 想用**另一种独立算法交叉验证** scDblFinder 的结论——两者都是成熟方法，若某个样本上结论差异很大，值得警惕
+- 你更熟悉 DoubletFinder 的参数体系（pK/pN 扫描），需要自己调参
+
+### 输入
+
+- `-I`：QC 之后的 Seurat rds（需含 `orig.ident` 或其它样本信息；本脚本**不按样本拆分**，整体处理）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| 输入 Seurat rds |
+| `-D, --decontx` | 关闭 | 是否运行 DecontX 去环境 RNA（`action="store_true"`，**默认关闭**；要跑必须显式加 `-D`）|
+| `-PC` | 30 | PCA / 降维 / 聚类用的主成分数 |
+| `-R` | 0.1 | 聚类分辨率 |
+| `-CA` | Louvain | 聚类算法：`Louvain` 或 `Leiden`（Leiden 需 `-P_env` 指定含 `leidenalg` 的 Python 环境）|
+| `-P_env` | 无 | Leiden 用的 Python 环境路径 |
+| `-DR` | 0.075 | **期望双细胞率**（双细胞占液滴的比例）|
+| `-T` | 10 | 线程数 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 加上 -D 才做 DecontX 去环境 RNA（默认关闭）
+./scRNA_DoubleFinder.r -I 01_QC/01.seu_merged.rds -D \
+    -PC 30 -R 0.1 -CA Louvain -DR 0.075 -T 20 -P 03. -O 03_deContamination
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>seo_contx.rds` | 跑完 DecontX 的对象（带 `decontX_contamination`、`decontX_class` 列）|
+| `<前缀>decontX_umap.png/.pdf` | DecontX 污染程度 FeaturePlot + L-prob/H-prob 分组 DimPlot |
+| `<前缀>decontX_violin.png/.pdf` | 按 L-prob/H-prob 分组的 nCount/nFeature/percent.mt 小提琴图 |
+| `<前缀>seo_doublets.rds` | 跑完双细胞检测的对象（带 `Double_score`、`Is_Double` 列）|
+| `<前缀>doublet_umap.png/.pdf` | 双细胞得分 FeaturePlot + Singlet/Doublet 分组 DimPlot |
+| `<前缀>doublet_violin.png/.pdf` | 按 Singlet/Doublet 分组的 nCount/nFeature/percent.mt 小提琴图 |
+| `<前缀>seo_deCont.rds` | **最终输出**：过滤掉 Doublet（以及 H-prob）后的对象 |
+
+示例输出：`Images/DoubleFinder/`。
+
+### 注意事项
+
+- **与 step2 二选一，不要串联**：两个脚本都会删双细胞，串联会导致重复过滤、细胞数偏少。
+- **`-D` 默认关闭**：与 step2 行为一致——`action="store_true"` 且 `default = FALSE`，要跑 DecontX 必须显式加 `-D`。
+- **双细胞率 `-DR` 是假设值**：默认 0.075 是 10x 数据的通用经验值，不是从你的数据估计出来的。样本越多、上样浓度越低，实际双细胞率通常越高。**用 scDblFinder 时可以让它自动估计，是本脚本的主要短板**。
+- **不按样本拆分**：所有样本的细胞一起参与建模与过滤，样本间 loading rate 差异被抹平。
+- **DecontX 阈值是全局的**：90% 分位在合并后的全部细胞上算，不是每个样本各自算——同一样本内污染程度差异大的数据要注意这点。
+- **`find.pK` 会在当前工作目录写一个临时 `pk_plot.png`**（跑完自动删除），不是写进 `-O`；在只读目录里运行会失败。
+- **输出对象较重**：`seo_deCont.rds` 保留了 data / scale.data / PCA / UMAP / 聚类等全部层（GB 级），不像 step2 的 `seu_clean.rds` 只留 counts。下一步若要接 step3（归一化 + Harmony），需要留意对象里已有的层。
+- **`-D` 会先生成 `seo_contx.rds` 再继续**，即使后续失败也能复用中间结果。
+- 运行时会打印每样本过滤前后的细胞数表格，可用于核对。
+
+
+---
+
+## 22 scRNA_ROC.r（独立脚本）—— 用基因表达做组间判别分析
+
+### 功能
+
+**给一组目标基因（或一个基因集），评估它们能否把两组样本区分开**：逐基因在样本层面算 AUC，画 ROC 曲线，最后给出按 AUC 排序的汇总表。
+
+与库内其它脚本的分工：
+
+| 脚本 | 回答什么 |
+|---|---|
+| `scRNA_ROC.r` | **判别能力**：某个基因（或基因集）能否把两组分开？AUC 多少？|
+| `scRNA_gene_DE.r` | **差异大小**：某基因在两组间表达差多少？差异是否显著？|
+| `scRNA_spRNA_cellPro.r` | **构成差异**：某细胞类型的占比在两组间是否不同？|
+
+ROC 是**判别分析**，不回答「差异是否显著」——AUC 高说明两组可分，但不给出 p 值。
+
+### 输入
+
+- `-I`：Seurat rds
+- `-SC`：样本身份列（如 `orig.ident`）
+- `-G`：**分组信息 CSV**，两列 `sample` 与 `group`，一行一个样本
+- `-F`：**基因列表文件**，每行一个基因符号
+- `-C`：**要比较的两个组名**（逗号或空格分隔，必须恰好 2 个）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| Seurat rds |
+| `-SC, --sample_column` | 无（必填）| 样本身份列名 |
+| `-G, --group_info` | 无（必填）| 分组信息 CSV（`sample` + `group` 两列）|
+| `-F, --gene_file` | 无（必填）| 基因列表文件，每行一个基因 |
+| `-C, --compare` | 无（必填）| 要比较的两个组名 |
+| `-GS, --geneset` | FALSE | 改为**基因集打分模式**：用 `AddModuleScore` 把整个基因列表当作一个特征 |
+| `-W, --plot_width` | 12 | ROC 图宽（英寸）|
+| `-H, --plot_height` | 12 | ROC 图高（英寸）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_ROC.r -I 05_annotation/05.seu_annotated.rds -SC orig.ident \
+    -G group.csv -F genelist.txt -C control,treat -W 12 -H 12 -P 09. -O 09_ROC
+```
+
+分组信息 CSV 格式：
+
+```
+sample,group
+S1,control
+S2,control
+S3,treat
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>AUC_result.csv` | 每个基因（或基因集）的 AUC 与方向，按 AUC 降序；行名即基因名 |
+| `<前缀>ROC_coordinates.csv` | 所有 ROC 曲线的坐标（specificity / sensitivity / threshold / FPR / TPR / gene）|
+| `<前缀>ROC_<基因名>.png/.pdf` | 每个基因一张 ROC 曲线图，标题含基因名与 AUC |
+
+示例输出：`Images/ROC/`。
+
+`AUC_result.csv` 的 `direction` 列说明哪一组更高：`ctrl_high` 表示第一组更高，`treat_high` 表示第二组更高。
+
+### 注意事项
+
+- **统计单位是样本**：每个样本取该基因的平均表达量作为预测值，因此 AUC 的可信度取决于**每组的样本数**，而不是细胞数。样本数很少时 AUC 波动很大，只能当探索性参考。
+- **`-GS` 开关改变的是特征的定义**：不加时每个基因各算一条 ROC；加了 `-GS` 则整个基因列表被 `AddModuleScore` 合成一个分数，只出一条 ROC。两种模式的 `AUC_result.csv` 行含义完全不同（前者行名是基因名，后者行名是 `GeneSet`）。
+- **基因必须在对象里**：脚本会打印「找到 / 未找到」的基因清单，未找到的直接剔除。若大部分基因都没找到，说明基因名版本与对象不一致，此时结果不可信。
+- **重复基因会被去重**，日志会列出重复的基因名。
+- **`-C` 必须是恰好两个组**，否则脚本直接报错停止；组名不在分组文件里也会报错停止。
+- **分组文件里的样本必须都能在对象里找到**，否则报错停止（避免静默丢样本）。
+- **只分析 `-C` 指定的两组**：`group_info` 里其他组的样本会被排除，不参与计算。
+- **AUC 方向由数据自动决定**：`pROC` 会判断哪一组预测值更高并记录在 `direction` 列，不要假设方向一定是「处理组更高」。
+- **AUC > 0.7 只是筛选参考**，不是显著性判据；脚本会打印 AUC > 0.7 的基因列表，但真正要下结论请回到 `scRNA_gene_DE.r` 或 `scRNA_pseudobulk_DE.r` 拿差异与 p 值。
+- **单个基因的 AUC 对表达量级敏感**：高表达基因即使两组差异不大也可能有较高 AUC，因为 ROC 只看排序不看绝对值。
+- **运行时会有 ggplot2 的 `size` → `linewidth` 弃用警告**，属正常提示。
+
+
+---
+
+## 23 scRNA_cellchat_single.r（独立脚本）—— 单个对象的细胞通讯分析（CellChat）
+
+### 功能
+
+**推断细胞类型之间的通讯信号**：用 CellChat 算法找出「谁在给谁发信号、用什么配受体对、走哪条信号通路」，并给出网络图、通路图与通讯模式。
+
+具体回答三个问题：
+1. **哪些细胞类型之间有通讯？**（网络图的连线，粗细 = 通讯强度）
+2. **通过什么分子？**（配受体对表 `communication_genes.csv`、信号通路表 `communication_pathways.csv`）
+3. **通讯模式有几类？**（`identifyCommunicationPatterns` 的 outgoing pattern，把细胞群按「发出的信号」聚类）
+
+### 输入
+
+- `-I`：已注释的 Seurat rds（需有 `orig.ident` 列——脚本用它构造 `samples`）
+- `-AC`：**细胞类型列名**（作为 CellChat 的分组依据）
+- `-S`：物种（`human` / `mouse`），决定用哪套配受体数据库与 PPI 网络
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| Seurat rds |
+| `-AC, --annotation_column` | 无（必填）| 细胞类型列名 |
+| `-S, --species` | 无（必填）| `human` 或 `mouse` |
+| `-TP, --type` | triMean | 每个细胞群平均表达的计算方式：`triMean`（默认，出的相互作用更少但更强）/ `truncatedMean`（配合 `-TM`，出的更多）|
+| `-TM, --trim` | 0.1 | `truncatedMean` 时两端截去的比例（0–0.25）|
+| `-NP, --nPatterns` | 无 | 通讯模式的数量 k，需看 `selectK_outcoming.png` 后确定 |
+| `-MC, --min_cell` | 10 | 每个细胞群参与通讯分析的最少细胞数 |
+| `-T, --threads` | 24 | 线程数 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 第一步：不带 -NP 跑，生成 selectK 图后看 k 的取值
+./scRNA_cellchat_single.r -I 05_annotation/05.seu_annotated.rds \
+    -AC celltype -S mouse -TP triMean -TM 0.1 -T 20 -P 10. -O 10_cellChat
+
+# 第二步：带上 -NP 重新跑，生成通讯模式相关图
+./scRNA_cellchat_single.r -I 05_annotation/05.seu_annotated.rds \
+    -AC celltype -S mouse -TP triMean -TM 0.1 -NP 3 -T 20 -P 10. -O 10_cellChat
+```
+
+**必须分两步跑**：脚本在 `-NP` 未给时会先出 `selectK` 图，然后 `stop()` 要求你指定模式数；不指定就跑不下去。
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>communication_genes.csv` | 配受体对层面的通讯表（source / target / ligand / receptor / prob / pval）|
+| `<前缀>communication_pathways.csv` | 信号通路层面的通讯表（source / target / pathway_name / prob / pval）|
+| `<前缀>cellchat.rds` | CellChat 对象（含网络、中心性、通讯模式），**下次跑同目录会自动复用** |
+| `<前缀>circle_overall.png/.pdf` | 总体网络圈图：左 = 通讯数量，右 = 通讯强度 |
+| `<前缀>circle_split_count.png/.pdf` | 每个发送方细胞群单独的通讯数量圈图 |
+| `<前缀>circle_split_weight.png/.pdf` | 每个发送方细胞群单独的通讯强度圈图 |
+| `<前缀>top9_signalPath_chord.png/.pdf` | 概率最高的 9 条信号通路的弦图（3×3 布局）|
+| `<前缀><通路名>_LR_distribution.png/.pdf` | 该通路上各配受体对的贡献占比 |
+| `<前缀><通路名>_LR_expr.png/.pdf` | 该通路配受体在细胞群中的表达 |
+| `<前缀><通路名>_role_network.png/.pdf` | 该通路的信号角色网络（发送者 / 接收者）|
+| `<前缀><通路名>_role_scatter.png/.pdf` | 信号角色的 2D 散点（横轴 = 发送角色，纵轴 = 接收角色）|
+| `<前缀><LR对名>_circle.png/.pdf` | 贡献最大的 3 个配受体对各自的圈图 |
+| `<前缀>allLRs_bubble.png/.pdf` | 全部配受体对的总体气泡图（24×24 英寸）|
+| `<前缀>selectK_outcoming.png/.pdf` | 选择模式数 k 的参考图（**第一步生成**）|
+| `<前缀>outgoing_patterns_heatmap.png/.pdf` | 通讯模式热图 |
+| `<前缀>outgoing_patterns_river.png/.pdf` | 通讯模式河流图 |
+| `<前缀>outgoing_patterns_dot.png/.pdf` | 通讯模式点图（各模式的发送/接收特征）|
+
+示例输出：`Images/cellchat/single/`。
+
+### 注意事项
+
+- **必须分两步跑**：不给 `-NP` 时脚本出完 `selectK` 图就 `stop()`，提示你指定模式数。
+- **物种必须匹配**：`human` 用 `CellChatDB.human` + `PPI.human`，`mouse` 用 `CellChatDB.mouse` + `PPI.mouse`，传别的值直接报错。
+- **`cellchat.rds` 会自动复用**：输出目录里已有该文件时，脚本跳过整个建模流程直接读缓存——**改了 `-TP`/`-TM`/`-MC` 也不会重算**，想重算请先删掉 `cellchat.rds`。
+- **`-NP` 决定通讯模式的个数**：k 太小模式粗、太大模式碎；参考 `selectK_outcoming.png` 里 elbow 位置。
+- **显著通路不足 9 条时会有 warning**：脚本只画实际找到的通路，格子会空着。
+- **`-TP triMean` vs `truncatedMean`**：默认的 `triMean` 只保留三群中至少两群表达的配受体，出的相互作用更少但更强；`truncatedMean` 配合 `-TM` 会保留更多弱信号。
+- **`-MC` 是硬门槛**：细胞数少于该值的细胞群不参与通讯分析，通常设 10–20。
+- **细胞类型数不宜过多**：CellChat 的网络图与弦图在群数多时可读性会明显下降。
+- **输出的 `cellchat.rds` 体积很大**（百 MB 到 GB 级），包含完整 Seurat 对象——因为 `createCellChat` 传了 `meta = seu@meta.data`，但 CellChat 仍会保留部分数据。空间紧张时跑完可以删。
+- **单细胞数据做 CellChat 的固有局限**：通讯推断基于「配体和受体是否在各自细胞群表达」的统计推断，**不能证明真实的物理接触**；另外 CellChat 的官方流程更适合 bulk 数据的多个个体重复，单细胞里通常按细胞类型汇总后做，样本层面的重复信息会被丢弃。
+
+---
+
+## 24 scRNA_cellchat_compare.r（独立脚本）—— 两组之间的通讯网络对比
+
+### 功能
+
+**比较两组的细胞通讯网络有什么不同**：把两个 CellChat 对象合并，逐项对比通讯数量、强度、通路组成与差异显著的配受体对。
+
+与单对象脚本的关系：**先跑 `scRNA_cellchat_single.r` 分别得到两组的 `cellchat.rds`，再跑本脚本做对比**。本脚本不重新建模，只做比较。
+
+### 输入
+
+- `-IC`：对照组的 CellChat rds（由 single 脚本生成）
+- `-IT`：处理组的 CellChat rds
+- `-GN`：两个组名，逗号分隔（如 `control,treatment`），**必须恰好两个**
+
+两个对象的细胞身份必须完全一致，否则脚本报错停止。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-IC, --input_C` | 无（必填）| 对照组 CellChat rds |
+| `-IT, --input_T` | 无（必填）| 处理组 CellChat rds |
+| `-GN, --group_names` | 无（必填）| 两个组名，逗号分隔 |
+| `-TI, --target_idents` | 无 | 只比较这些细胞身份，逗号分隔；不给则全部比较 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_cellchat_compare.r -IC 10_cellChat/10.control_cellchat.rds \
+    -IT 10_cellChat/10.treat_cellchat.rds -GN control,treat \
+    -P 11. -O 11_cellChat_compare
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>merged_cellchat.rds` | 合并后的 CellChat 对象，**已存在时会自动复用** |
+| `<前缀>comparison_barplot.png/.pdf` | 两组的通讯数量与强度对比柱状图 |
+| `<前缀>comparison_circleplot.png/.pdf` | 差异网络圈图（左 = 数量，右 = 强度，增粗的边 = 组间差异显著）|
+| `<前缀>weight_comparison_heatmap.png/.pdf` | 通讯强度热图 |
+| `<前缀>overall_circleplot.png/.pdf` | 2×2 布局：两组各自的数量图与强度图，边宽统一便于对比 |
+| `<前缀>role_2d.png/.pdf` | 两组的信号角色 2D 散点并排 |
+| `<前缀>pathway_functionalClustering.png/.pdf` | 通路的功能相似性聚类嵌入图 |
+| `<前缀>pathway_functionalSimilarity.png/.pdf` | 通路相似性排名热图 |
+| `<前缀>weight_DEG_pathways.png/.pdf` | 组间差异显著的通路（堆叠与非堆叠两种）|
+| `<前缀>outgoing_pathway_heatmap.png/.pdf` | 两组的 outgoing 通路角色热图并排 |
+| `<前缀>LRs_comparison_bubble.png/.pdf` | 配受体对比较气泡图 |
+| `<前缀>LRs_comparison_bubble_changed.png/.pdf` | 只显示各组增强的配受体对 |
+| `<前缀><通路名>_LRs_expression_comparison.png/.pdf` | 差异最大通路的配受体表达对比小提琴图 |
+
+示例输出：`Images/cellchat/compare/`。
+
+### 注意事项
+
+- **必须先跑 single 脚本**：本脚本的输入是 CellChat 对象，不是 Seurat 对象。
+- **两个对象的细胞身份必须完全一致**：脚本会比较 idents 并在不一致时 `stop()`。
+- **`-GN` 顺序有意义**：第一个是「对照」、第二个是「处理」，影响 `direction`、图例顺序与「Increased signaling in X」这类标题。
+- **`-TI` 只在两个对象都含这些细胞类型时有效**：名字写错会导致该群缺失。
+- **`merged_cellchat.rds` 会自动复用**：已存在时直接读缓存。**但缓存里的对象是用当时的 `-TI` 生成的**，改了 `-TI` 想重算请先删掉该文件。
+- **`setwd(outpath)` 会改变当前工作目录**：脚本开头会切到输出目录，跑完后当前目录就变了；调用时最好用绝对路径。
+- **`rankNet` 的显著性来自 CellChat 的置换检验**，不是常规 p 值；`cutoff.pvalue = 0.05` 是硬编码的。
+- **`pathway_functionalSimilarity` / `weight_DEG_pathways` 依赖网络相似性分析**，用的是功能相似性（基于通路共享的配受体），不是基因集富集。
+- **`LRs_comparison_bubble` 的 `sources.use = 1`**：只画第一个细胞群作为发送方的比较气泡图；若要换，改脚本里的这个参数。
+- **输出同样包含大体积 rds**（`merged_cellchat.rds`），注意磁盘空间。
+
+
+---
+
 ## 附录：环境与依赖
 
 **R 侧**（主流程各步与独立 R 脚本）：
@@ -1743,6 +2093,9 @@ GeneC
 - 通路富集（`scRNA_spRNA_enrichment.r` + 配套 `enrichment_analysis.r`）：主脚本只准备输入文件，实际富集由配套脚本执行（需要 `clusterProfiler`、`enrichplot`、`GseaVis`、`org.Hs.eg.db`/`org.Mm.eg.db`）
 - 通路活性打分（`scRNA_GSVA_enrichment.r`）：`GSVA`、`msigdbr`（GO:BP / KEGG MEDICUS / REACTOME 基因集）、`limma`（组间比较）、`ComplexHeatmap`（热图）、`Seurat`、`tidyverse`
 - 自定义基因集打分（`scRNA_genesetScore.r`）：`GSVA`（GSVA + ssGSEA）、`AUCell`、`Seurat`（AddModuleScore）、`tidyverse`
+- 去双细胞（`scRNA_dedoublets_step2.r` / `scRNA_DoubleFinder.r`）：`scDblFinder` / `DoubletFinder`、`celda`（DecontX）、`BiocParallel`、`Seurat`、`tidyverse`、`patchwork`、`reticulate`（Leiden 时）
+- 判别分析（`scRNA_ROC.r`）：`pROC`（AUC / ROC）、`tidyverse`、`Seurat`
+- 细胞通讯（`scRNA_cellchat_single.r` / `scRNA_cellchat_compare.r`）：`CellChat`、`NMF`（通讯模式聚类）、`ggalluvial`、`patchwork`、`ComplexHeatmap`（outgoing 通路热图）、`Seurat`、`tidyverse`
 
 **Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）：
 

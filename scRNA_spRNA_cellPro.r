@@ -431,8 +431,8 @@ if (!is.null(group_order) && length(group_order) == 2){
       axis.title = element_text(size = 14, face = "bold"),
       legend.title = element_text(face = "bold")
     )
-  ggsave(file.path(outpath, paste0(prefix, celltype_column, "_DE.png")), p3, width = DE_plot_width, heigh = DE_plot_height, dpi = 300 ,bg = "white")
-  ggsave(file.path(outpath, paste0(prefix, celltype_column, "_DE.pdf")), p3, width = DE_plot_width, heigh = DE_plot_height)
+  ggsave(file.path(outpath, paste0(prefix, celltype_column, "_DE.png")), p3, width = DE_plot_width, height = DE_plot_height, dpi = 300 ,bg = "white")
+  ggsave(file.path(outpath, paste0(prefix, celltype_column, "_DE.pdf")), p3, width = DE_plot_width, height = DE_plot_height)
   plot_n <- plot_n + 1
   cat("\nPlot ", plot_n, " : ", paste0(prefix, celltype_column, "_DE.png (pdf)"), " has been generated successfully !\n", sep = "")
 }
@@ -519,8 +519,8 @@ if (!is.null(sub_celltype_column) && !is.null(group_order) && length(group_order
     sub_plots_list[[ct]] <- p
   }
   p4 <- wrap_plots(sub_plots_list, ncol = 3)
-  ggsave(file.path(outpath, paste0(prefix, sub_celltype_column, "_DE.png")), p4, width = sub_DE_plot_width, heigh = sub_DE_plot_height, dpi = 300 ,bg = "white")
-  ggsave(file.path(outpath, paste0(prefix, sub_celltype_column, "_DE.pdf")), p4, width = sub_DE_plot_width, heigh = sub_DE_plot_height)
+  ggsave(file.path(outpath, paste0(prefix, sub_celltype_column, "_DE.png")), p4, width = sub_DE_plot_width, height = sub_DE_plot_height, dpi = 300 ,bg = "white")
+  ggsave(file.path(outpath, paste0(prefix, sub_celltype_column, "_DE.pdf")), p4, width = sub_DE_plot_width, height = sub_DE_plot_height)
   plot_n <- plot_n + 1
   cat("\nPlot ", plot_n, " : ", paste0(prefix, sub_celltype_column, "_DE.png (pdf)"), " has been generated successfully !\n", sep = "")
 }

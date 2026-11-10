@@ -73,9 +73,9 @@ parser$add_argument(
 )
 parser$add_argument(
   "--alt",
-  dest = "alternative", type = "character", default = "auto",
+  dest = "alternative", type = "character", default = "two.sided",
   choices = c("auto", "two.sided", "greater", "less"),
-  help = "Boxplot test direction (default: auto). 'auto' = one-sided 'less': H1 = group2 > group1 (right-most group higher). 'two.sided' = non-directional."
+  help = "Boxplot test direction (default: two.sided). 'two.sided' = non-directional. 'auto' = one-sided 'less': H1 = group2 > group1 (right-most group higher). 'greater' / 'less' = explicit one-sided."
 )
 parser$add_argument(
   "--signif_bar",
@@ -683,14 +683,18 @@ if (!no_plot) {
         median_group2 = sprintf("%.3f", med[2]),
         mean_group1   = sprintf("%.3f", mn[1]),
         mean_group2   = sprintf("%.3f", mn[2]),
-        test = paste0("wilcoxon_one_sided_", alt),
+        test = if (alt == "two.sided") "wilcoxon_two_sided" else paste0("wilcoxon_one_sided_", alt),
         n_outliers = n_out,
-        p_value = format(pv, scientific = TRUE, digits = 4),
+        p_value = pv,
         stringsAsFactors = FALSE
       )
     }
 
     stats_df <- do.call(rbind, stats_rows)
+    # BH correction across the celltype-level tests of this gene. Celltypes
+    # whose test could not run (fewer than 2 samples in a group) keep p = NA
+    # and are carried through as NA; they still count towards the family size.
+    stats_df$p_adj <- p.adjust(stats_df$p_value, method = "BH")
     stats_f  <- file.path(outpath, paste0(prefix, gene, "_boxplot_stats.csv"))
     write.csv(stats_df, stats_f, row.names = FALSE, quote = FALSE)
     cat("\nFile : ", basename(stats_f), " saved successfully !\n", sep = "")
@@ -702,10 +706,12 @@ if (!no_plot) {
                   box_width, "x", box_height, " in, groups = ",
                   paste(groups_use, collapse = ","), "\n")
     write_summary("Stats CSV    : ", basename(stats_f), "\n")
+    write_summary("p_adj        : BH-adjusted across the celltype-level tests of this gene\n")
     write_summary("\n---------- Wilcoxon rank-sum test (per sample) ----------\n")
     write_summary("Alternative  : ",
                   if (alternative == "auto") "less (one-sided: group2 > group1)"
                   else alternative, "\n")
+    write_summary("              (two-sided by default; one-sided only when --alt is set explicitly)\n")
     write_summary("Points are samples, not cells. Group sizes: ",
                   paste(groups_use, "=",
                         sapply(groups_use, function(g)
