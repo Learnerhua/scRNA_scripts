@@ -193,7 +193,7 @@ for (ct in cts){
     cat("\nClustering results for cell type ", ct, " already exist. Skipping...\n", sep = "")
     next
   }
-  seo_subset <- subset(seo, celltype == ct)
+  seo_subset <- seo[, seo@meta.data[[annotation_column]] == ct]
   seo_subset <- NormalizeData(seo_subset)
   seo_subset <- FindVariableFeatures(seo_subset, selection.method = "vst", nfeatures = 2000)
   seo_subset <- ScaleData(seo_subset)

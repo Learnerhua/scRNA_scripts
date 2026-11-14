@@ -30,6 +30,17 @@
 | `enrichment_analysis.r` | 辅助脚本（**上一脚本必需**） | 用 clusterProfiler 执行实际的 GO/KEGG 富集与 GSEA：输入目标基因列表（`-G`）与可选背景基因集（`-E`），或输入全基因排序表做 GSEA（`-GSEA` + `-GM`），输出富集表、dotplot 与 barplot。也可单独用于 bulk RNA | 基因列表 / 排序表 → 富集表 + 图 | — |
 | `scRNA_ROC.r` | 独立（判别分析） | **一组目标基因能把两组分开到什么程度？** 逐基因（加 `-GS` 时是整个基因集的合成分数）在样本层面算 AUC，给每个基因画一条 ROC 曲线，并输出按 AUC 排序的汇总表。这是**判别分析，不做显著性检验**——要 p 值请配合 `scRNA_gene_DE.r` 或 `scRNA_pseudobulk_DE.r` | 注释 rds + 分组 csv + 基因列表 → AUC 表 + ROC 曲线 | `Images/ROC/` |
 | `scRNA_cellchat_single.r` | 独立（细胞通讯） | **哪些细胞类型之间在通讯？通过什么配受体？** 对单个注释对象跑 CellChat 流程：建立互作网络、列出显著的配受体对与信号通路、画总体与逐发送方的圈图、概率最高的 9 条通路的弦图，并把细胞群按「发出的信号」聚成通讯模式。需要跑两次——先不带 `-NP` 拿到 `selectK` 图，再按图上的模式数带上 `-NP` 重跑 | 注释 rds → 通讯表 + 网络 / 通路 / 模式图 | `Images/cellchat/single/` |
+| `scRNA_spRNA_Monocle3.r` | 独立（拟时序） | **细胞之间的推进顺序是什么？** 用 Monocle3 学习轨迹图，从你指定的根细胞群沿拟时序给细胞排序，找出沿这条轴变化的基因（Moran's I 检验），并把它们归入基因模块。支持单细胞对象与空间对象（metadata 需含 `x`、`y` 坐标） | 注释 rds（或空间对象）→ 拟时序图 + Moran's I 表 + 基因模块 + 模块热图 | `Images/Monocle3/` |
+| `scRNA_pyscenic_prepare.r` | 独立（调控网络） | **准备 pySCENIC 输入。** 从 Seurat 对象取出一层表达矩阵，剔除检出细胞过少的基因，可选抽样细胞，写成带 `Gene` / `CellID` 属性的 loom 文件（`pyscenic` CLI 要求的形式）| Seurat rds → loom | |
+| `scRNA_pyscenic.py` | 独立（调控网络） | **推断转录因子调控网络。** 连续调用 `pyscenic` CLI 三次：`grn` 做共表达推断（GRNBoost2）、`ctx` 用 motif 富集把共表达裁剪成「直接调控」的靶基因（regulon）、`aucell` 给每个细胞的每个 regulon 打活性分。输出已存在的步骤会自动跳过，ctx 失败后可单独重跑 | loom + 参考文件 → adj.csv + regulons.csv + SCENIC.loom | |
+| `scRNA_pyscenic_RSS.r` | 独立（调控网络） | **找出每类细胞的标志转录因子。** 从 AUCell 矩阵算 RSS 特异性分数，画特异性总图与逐 regulon 的各类图，并把调控活性矩阵写回 Seurat 对象——这样以后想画别的 TF 不必重跑 pySCENIC | Seurat rds + SCENIC loom → rss.csv + 图 + seu_SCENIC.rds | `Images/pyscenic/` |
+| `scanpy/scRNA_pipeline_scanpy.py` | Scanpy 路线 | **一条命令走完质控、去双细胞、归一化、整合、聚类与 marker 发现。** 对应 Seurat 主流程 step1–4，但用 Python 写、处理 h5ad。QC 是两段式：第一次跑只画 QC 图后退出，供你定阈值；第二次带上阈值才继续。去双细胞用 Scrublet，去批次用 Harmony，聚类用 Leiden（`flavor='igraph'`）| h5ad → preprocessed.h5ad | `Images/scanpy/pipeline/` |
+| `scanpy/scRNA_annotate_scanpy.py` | Scanpy 路线 | **给每个 cluster 指定细胞类型。** 阶段一吃「细胞类型 → marker」表并画 dotplot，供你判断 cluster 身份；阶段二吃「cluster → 细胞类型」表，写进 `adata.obs['celltype']` 后重画 UMAP 与 dotplot | preprocessed.h5ad → annotated.h5ad | `Images/scanpy/annotate/` |
+| `scanpy/scRNA_DE_scanpy.py` | Scanpy 路线 | **找出每个 cluster 的 marker 基因。** 跑 `rank_genes_groups`（Wilcoxon / t-test / logreg），出 marker 概览图与逐 cluster 的 dotplot，并写出完整 marker 表。这是**细胞级**检验——需要样本级组间比较请用 `scRNA_pseudobulk_DE.r` | h5ad → marker 表 + 图 + DE_analyzed.h5ad | `Images/scanpy/DE/` |
+| `scanpy/scRNA_pipeline_scanpy_GPU.py` | Scanpy 路线 | **同一套 13 步流程的 GPU 版。** 流程与输出和 CPU 版一致，只是把每个 `scanpy` 调用换成 `rapids-singlecell`；需要 CUDA 显卡与 `cupy`。额外 `-raw` 参数让保存的 h5ad 保留全部基因（默认只留高变基因）| h5ad → preprocessed.h5ad | |
+| `scRNA_scTenifoldKnk.r` | 独立（虚拟敲除） | **不做真实敲除实验，预测拿掉某个基因后哪些基因会受影响。** 用 counts 矩阵重建调控网络，把目标基因的连接置零（虚拟敲除），比较野生型与敲除网络，输出受影响基因表及其富集通路 | Seurat rds（需 counts 层与已算好的 HVG）+ 一个基因名 → diffRegulation 表 + 结果 rds + 4 张图 | `Images/scTenifoldKnk/` |
+| `scRNA_hdWGCNA.r` | 独立（共表达网络） | **找出某个细胞类型的基因共表达模块，以及每个模块的核心 hub 基因。** 在 metacell 上建 WGCNA 网络（metacell 把 k 个邻近细胞平均成一个伪细胞，避免 dropout 主导网络），把基因划分成模块、按 kME 排序、用 UCell 给每个细胞打模块活性分，并画出软阈值诊断图、基因聚类树与模块颜色条、模块相关性、细胞类型 × 模块 dotplot | Seurat rds（需 harmony 降维）→ 模块表 + hub 基因 + MEs/hMEs + 10 张图 + seu_hdWGCNA.rds | `Images/hdWGCNA/` |
+| `scRNA_velocity.py` | 独立（轨迹） | **细胞正朝哪个方向变化？** 在含 spliced/unspliced 的 AnnData 上跑 scVelo RNA velocity，把速度流线叠在 UMAP 上——每个细胞不再只是一个点，而是带方向的箭头。`dynamical` 模式还会恢复每个基因的转录动力学、给出 latent time 和驱动转变的基因；`stochastic` 更快，只依赖表达量 | velocity 输入 h5ad → 流线图 + latent time 图 + 结果 h5ad | `Images/velocity/` |
 | `scRNA_cellchat_compare.r` | 独立（细胞通讯） | **两组的通讯网络有什么不同？** 合并两个 CellChat 对象（由上一脚本产出），对比互作数量、强度、通路组成，以及组间显著差异的配受体对 | 两个 CellChat rds → 合并对象 + 对比图 | `Images/cellchat/compare/` |
 | `scRNA_DoubleFinder.r` | 独立（替代方案） | **去双细胞的替代实现**：与 step2 做同一件事，但改用 DoubletFinder，且在整个合并对象上统一建模（不逐样本）；期望双细胞率必须手填 `-DR`（不能自动估计），输出保留全部层。用于用独立算法交叉验证 step2 的结论——绝不要在同一份数据上两个都跑 | 合并 rds → 干净 rds | `Images/DoubleFinder/` |
 | `sankey_composition.r` | 辅助脚本（**上一脚本必需**） | 用 `ggalluvial` 渲染组成桑基（冲积）图。由 `scRNA_composition_sccoda.py` 自动调用；**必须与它放在同一目录** | 组成比例 CSV → 桑基图 PNG/PDF | ↑ |
@@ -88,6 +99,12 @@
 - 细胞比例分析（`scRNA_spRNA_cellPro.r`）：`ggalluvial`（桑基图）、`ggpubr`（显著性标注）、`patchwork`（亚型图拼接）、`tidyverse`、`Seurat`、`RColorBrewer`、`scales`
 - 判别分析（`scRNA_ROC.r`）：`pROC`（AUC / ROC）、`tidyverse`、`Seurat`
 - 细胞通讯（`scRNA_cellchat_single.r` / `scRNA_cellchat_compare.r`）：`CellChat`、`NMF`（通讯模式聚类）、`ggalluvial`、`patchwork`、`ComplexHeatmap`（outgoing 通路热图）、`Seurat`、`tidyverse`
+- 拟时序与轨迹（`scRNA_spRNA_Monocle3.r`）：`monocle3`、`SeuratWrappers`（`as.cell_data_set`）、`pheatmap`（模块热图）、`igraph`、`leidenbase`、`Rcpp`、`Seurat`、`tidyverse`
+- pySCENIC（`scRNA_pyscenic_prepare.r` + `scRNA_pyscenic_RSS.r`）：`SCopeLoomR`（读写 loom）、`SCENIC`（`calcRSS` / `plotRSS` / `getAUC`）、`gridExtra`、`Seurat`、`tidyverse`；Python 侧：`pyscenic` 0.12.x（含 `arboreto` / `ctxcore` / `primp`）、`loompy`、`dask`、`pandas`、`numpy`（需独立的 Python 3.7 环境）
+- Scanpy 路线（`scanpy/` 子目录）：`scanpy`、`anndata`、`pandas`、`numpy`、`matplotlib`、`harmonypy`（Harmony）、`igraph`（Leiden 用 `flavor='igraph'`，不需要 `leidenalg`）、`scrublet`（去双细胞步骤）；GPU 版另需 `cupy` + `rapids-singlecell` + CUDA 显卡
+- 虚拟敲除（`scRNA_scTenifoldKnk.r`）：`scTenifoldKnk`（GitHub `cailab-tamu/scTenifoldKnk`）、`Seurat`、`tidyverse`、`patchwork`、`igraph`、`ggrepel`、`enrichR`（`plotKO` 会联网访问 Enrichr）
+- 共表达网络（`scRNA_hdWGCNA.r`）：`hdWGCNA`（GitHub `smorabit/hdWGCNA`）、`WGCNA`、`UCell`、`ggradar`、`Seurat`、`harmonypy`（metacell 步骤依赖 harmony）、`tidyverse`、`patchwork`
+- RNA velocity（`scRNA_velocityPrepare.r` + `scRNA_velocity.py`）：`anndataR`（AnnData 转换，R 侧）、`scanpy`、`scvelo`、`anndata`、`numpy`、`pandas`、`h5py`、`matplotlib`（Python 侧）
 - 自动注释（`scRNA_SingleR.r`）：`SingleR`、`SingleCellExperiment`、`scater`、`celldex`（内置 human/mouse 参考）、`Seurat`、`tidyverse`
 - 通路富集（`scRNA_spRNA_enrichment.r` + 配套 `enrichment_analysis.r`）：主脚本只准备输入文件，富集由配套脚本执行，需 `clusterProfiler`、`enrichplot`、`GseaVis` 与 `org.Hs.eg.db`/`org.Mm.eg.db`
 - 通路活性打分（`scRNA_GSVA_enrichment.r`）：`GSVA`、`msigdbr`（GO:BP / KEGG MEDICUS / REACTOME 基因集）、`limma`（组间比较）、`ComplexHeatmap`（热图）、`Seurat`、`tidyverse`
@@ -127,6 +144,30 @@
 
 # 可选：细胞通讯（跑两次：先不带 -NP，再带上）
 ./scRNA_cellchat_single.r -I 05_annotation/05.seu_annotated.rds -AC celltype -S mouse -TP triMean -TM 0.1 -NP 3 -T 20 -P 10. -O 10_cellChat
+
+# 可选：拟时序 / 轨迹（用 -C 和 -G 指定根细胞群）
+./scRNA_spRNA_Monocle3.r -I 05_annotation/05.seu_annotated.rds -DT SC -C celltype -G <root_celltype> -R1 1e-5 -R2 0.5 -T 20 -P 11. -O 11_monocle3
+
+# 可选：RNA velocity（先准备输入，再跑 scVelo）
+./scRNA_velocityPrepare.r -R 05_annotation/05.seu_annotated.rds -F full_seurat_with_velocity.rds -P 12. -O 12_velocity
+./scRNA_velocity.py -I 12_velocity/12.scRNA_velocity_input.h5ad -AC celltype -M dynamical -T 40 -P 12. -O 12_velocity/result
+
+# 可选：转录因子调控网络（三个脚本，按顺序执行）
+./scRNA_pyscenic_prepare.r -I 05_annotation/05.seu_annotated.rds -A RNA -L data -MG 50 -P 01. -O 12_pyscenic
+./scRNA_pyscenic.py -I 12_pyscenic/01.expr_norm.loom -S mouse -RD ref_data -T 12 -P 01. -O 12_pyscenic
+./scRNA_pyscenic_RSS.r -I 05_annotation/05.seu_annotated.rds -L 12_pyscenic/01.SCENIC.loom -AC celltype -NT 2 -P 02. -O 12_pyscenic/RSS
+
+# 可选：虚拟基因敲除
+./scRNA_scTenifoldKnk.r -I 05_annotation/05.seu_annotated.rds -TG GeneX -T 8 -p_val 0.05 -P 01. -O 14_scTenifoldKnk
+
+# 可选：单个细胞类型的共表达模块
+./scRNA_hdWGCNA.r -I 05_annotation/05.seu_annotated.rds -AC celltype -SC orig.ident -TC 'CellTypeA' -A RNA -SP 3 -T 8 -P 01. -O 13_hdWGCNA
+
+# 可选：Scanpy 路线（Python，处理 h5ad 而非 rds）
+./scanpy/scRNA_pipeline_scanpy.py -I raw.h5ad -BK sample -O 01_scanpy -P 01.          # 第一次：只画 QC 图
+./scanpy/scRNA_pipeline_scanpy.py -I raw.h5ad -BK sample -O 01_scanpy -P 01. -minG 200 -maxG 2500 -minU 500 -maxU 10000 -minC 3 -maxMT 5 -maxHB 5
+./scanpy/scRNA_annotate_scanpy.py -I 01_scanpy/01.preprocessed.h5ad -MB markers.tsv -P 02. -O 02_annotation
+./scanpy/scRNA_DE_scanpy.py -I 02_annotation/02.annotated.h5ad -CK celltype -P 03. -O 03_DE
 
 # 可选：用参考数据集自动推断细胞类型（SingleR）
 ./scRNA_SingleR.r -I 04_clustering/04.seu_res0.6_clustered.rds -S mouse -P 05. -O 05_SingleR
@@ -184,6 +225,12 @@ path,sample,group
 - 从 **Broad Single Cell Portal** 下载数据时，用 `scRNA_mtx2rds.r` 直接建对象（细胞名列默认 `NAME`，首行 `TYPE` 自动跳过）。
 - `scRNA_subcelltype_clustering.r` 用于把已注释对象再细分：阶段 1 为每个细胞类型出 clustree，阶段 2 按你记录的每类型分辨率（CSV：`celltype`、`resolution`）定亚型并跑亚型 DE。
 - `scRNA_pseudobulk_DE.r` 回答「**每种细胞类型内部，两组之间哪些基因有差异**」：按「细胞类型 × 样本」聚合原始 counts 后跑 DESeq2，所以 `-SC` 必须填**生物学重复**。细胞级检验把每个细胞当重复，p 值会虚高；pseudobulk 的结论才能外推到新样本。
+- `scRNA_scTenifoldKnk.r` **一次只敲一个基因**（`-TG` 只取一个名字，多个基因换 `-P` 前缀跑多次）。需要原始 counts、对象已算过 `VariableFeatures`，且细胞数要够（每个子网络抽 500 个）。
+- `scRNA_hdWGCNA.r` **一次只分析一个细胞类型**：`-TC` 只取一个值，且输入对象必须已带 `harmony` 降维，并含 `-AC` / `-SC` 指定的注释列与样本列。
+- Scanpy 路线放在 `scanpy/` 里，是与 Seurat 主线并行的另一条流程：收发 `.h5ad` 而非 `.rds`，并把 Seurat 的 step1–4 合进一个脚本。**两种对象格式不要混用**——需要跨路线时用 `scRNA_h5ad2rds.r` / `scRNA_h5ad_seurat_convert.r` 转换。
+- pySCENIC 是三脚本一条链，**必须按顺序执行**：`scRNA_pyscenic_prepare.r`（Seurat → loom）→ `scRNA_pyscenic.py`（grn / ctx / aucell）→ `scRNA_pyscenic_RSS.r`（RSS、出图、活性写回对象）。三者跨两个环境，靠各自 shebang 切换，无需手动 activate。`SCENIC.loom` **只能用 R 的 `SCopeLoomR` 读**，Python 的 `loompy` 读不了（多列属性不符合 loom v3 规范）。
+- RNA velocity 分两步：`scRNA_velocityPrepare.r` 把「含 spliced/unspliced 的完整对象」与「分析用的子集对象」对齐，写出带三个 assay 的 h5ad；`scRNA_velocity.py` 再做实际计算。velocity 推断的是表达状态的变化方向，**本身不等于谱系关系**。
+- 拟时序分析是有方向的：根细胞群由 `-C` + `-G` 指定，选错根整条时间轴方向就错了——先用轨迹图看懂结构再定根。Monocle3 **不建模细胞群的占比变化**，那要用 scCODA。
 - 细胞通讯分两步：`scRNA_cellchat_single.r` 对单个对象建模（**第一次先不带 `-NP`** 拿到 `selectK` 图，读出模式数后再带上 `-NP` 重跑），产出 `cellchat.rds`；`scRNA_cellchat_compare.r` 拿两个这样的对象做对比。两个对象的细胞身份必须完全一致。
 - `scRNA_ROC.r` 是判别分析：统计单位是样本，AUC 说的是「这个基因能把两组分开到什么程度」，**不做显著性检验**。要 p 值请用 `scRNA_gene_DE.r`（单基因、样本级 Wilcoxon）或 `scRNA_pseudobulk_DE.r`（逐细胞类型、DESeq2）。
 - `scRNA_spRNA_cellPro.r` 回答「**每个样本里各细胞类型占多少、两组之间比例有没有差别**」：统计单位是样本（`-SC`），不是细胞。它是快速描述 + 简单 Wilcoxon 检验；需要带可信区间的正式成分检验时用 `scRNA_composition_sccoda.py`。

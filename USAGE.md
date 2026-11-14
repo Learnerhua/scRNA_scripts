@@ -38,8 +38,27 @@
 | `scRNA_ROC.r` | **评估目标基因的组间判别能力**：逐基因在样本层面算 AUC 并画 ROC 曲线，给出按 AUC 排序的汇总表 | 注释 rds + 分组 csv + 基因列表 → AUC 表 + ROC 曲线 |
 | `scRNA_cellchat_single.r` | **推断细胞类型之间的通讯信号**：用 CellChat 找出谁给谁发什么信号、走哪条通路，并给出网络图与通讯模式 | 注释 rds → 通讯表 + 网络图 + 模式图 |
 | `scRNA_cellchat_compare.r` | **比较两组的通讯网络差异**：合并两个 CellChat 对象，逐项对比通讯数量、强度与通路组成 | 两个 CellChat rds → 合并对象 + 对比图 |
+| `scRNA_spRNA_Monocle3.r` | **给细胞排出发育/转变的先后顺序**：用 Monocle3 学习轨迹图、指定根细胞、计算拟时序，并找出沿轨迹变化的基因与基因模块 | 注释 rds（或空间对象）→ 拟时序图 + Moran's I 表 + 模块表 + 热图 |
+| `scRNA_velocity.py` | **推断细胞的状态变化方向**：用 scVelo 算 RNA velocity，叠在 UMAP 上得到流线图，并给出 latent time 与驱动转变的基因 | velocity 输入 h5ad → 流线图 + latent time 图 + 结果 h5ad |
+| `scRNA_velocityPrepare.r` | **配套脚本**：把含 spliced/unspliced 的完整对象与分析子集对齐，生成带 RNA / spliced / unspliced 三层的 velocity 输入对象 | 参考 rds + 完整 rds → velocity 输入 rds + h5ad |
+| `scRNA_pyscenic_prepare.r` | **准备 pySCENIC 输入**：从 Seurat 对象过滤低检出基因、可选抽细胞，写成带 Gene/CellID 属性的 loom | Seurat rds → loom |
+| `scRNA_pyscenic.py` | **推断转录因子调控网络**：依次调 pyscenic 的 grn（共表达）、ctx（motif 富集得到 regulon）、aucell（逐细胞活性打分） | loom + 参考文件 → adj.csv + regulons.csv + SCENIC.loom |
+| `scRNA_pyscenic_RSS.r` | **找出每类细胞的标志转录因子**：算 RSS 特异性分数、出 5 张图，并把调控活性写回 Seurat 对象（5 张图的读法见第 28 章「结果图怎么读」）| Seurat rds + SCENIC loom → rss.csv + 图 + seu_SCENIC.rds |
+| `scRNA_scTenifoldKnk.r` | **预测「敲掉某个基因」会连带影响哪些基因**：用单细胞数据重建调控网络，在网络里把目标基因的连接置零做虚拟敲除，比较敲除前后的网络差异，得到受影响基因表与富集通路 | Seurat rds（需 counts 层 + HVG）+ 基因名 → diffRegulation 表 + 4 张图 |
+| `scRNA_hdWGCNA.r` | **找出某个细胞类型内部的基因共表达模块与核心 hub 基因**：在 metacell 上建 WGCNA 网络，划分模块、算 kME、给细胞打模块活性分，并出模块诊断与可视化图 | Seurat rds（需 harmony 降维）→ 模块表 + hub 基因 + MEs/hMEs + 10 张图 + seu_hdWGCNA.rds |
 | `enrichment_analysis.r` | **配套脚本**：执行实际的 GO/KEGG 富集与 GSEA（第 17 章脚本调用它）| 基因列表 / 排序表 → 富集表 + 图 |
 | `sankey_composition.r` | **配套脚本**：用 `ggalluvial` 渲染细胞组成桑基图（第 8 章脚本调用它）| 组成占比表 → 桑基图 |
+
+**Scanpy 路线（`scanpy/` 子目录，输入输出为 `.h5ad`）**
+
+| 脚本 | 用途 | 输入 → 输出 |
+|---|---|---|
+| `scanpy/scRNA_pipeline_scanpy.py` | **质控、去双细胞、归一化、整合、聚类并找出各群差异基因**：一条命令走完前四步预处理，产出可注释的对象 | h5ad → preprocessed.h5ad |
+| `scanpy/scRNA_annotate_scanpy.py` | **给细胞群标注细胞类型**：先按 marker 表画 dotplot 判断 cluster 身份，再按映射表写回 celltype | preprocessed.h5ad → annotated.h5ad |
+| `scanpy/scRNA_DE_scanpy.py` | **找出每个细胞群的 marker 基因**：Wilcoxon / t-test / logreg 差异检验 + 概览图与逐群 dotplot | h5ad → DE 表 + 图 + DE_analyzed.h5ad |
+| `scanpy/scRNA_pipeline_scanpy_GPU.py` | **GPU 加速版的前四步预处理**：流程与 CPU 版完全相同，改用 rapids-singlecell，需 CUDA 显卡 | h5ad → preprocessed.h5ad |
+
+> Scanpy 路线与 Seurat 路线**产物格式不同**（`.h5ad` vs `.rds`），不能混用；跨路线请用 `scRNA_h5ad2rds.r` / `scRNA_h5ad_seurat_convert.r` 转换。详见「Scanpy 路线」章。
 
 > `enrichment_analysis.r` 不是独立调用的分析脚本，而是 `scRNA_spRNA_enrichment.r` 的**必需配套脚本** —— 后者用 `system()` 调用它做实际的 GO/KEGG 富集与 GSEA（命令名 `enrichment_analysis` 需在 `PATH` 中；本文件提供的是 `.r` 版本，命名为 `enrichment_analysis` 的软链/副本即可被调用）。缺该命令时主脚本仍会跑完并生成所有中间文件，但富集结果为空。
 >
@@ -58,6 +77,9 @@
 - 想比较「两组之间哪些通路的活性不一样」但手上还没有 DE 结果时，用 `scRNA_GSVA_enrichment.r`：它按「样本 × 细胞类型」聚合成伪 bulk，算 log2(CPM+1) 后用 GSVA 打分（GO:BP / KEGG MEDICUS / REACTOME 三套基因集），再用 limma 在样本层面比较两组。它与 `scRNA_spRNA_enrichment.r` 互补：前者看「通路活性」，后者看「差异基因落在哪些通路上」。
 - 想看「某个自定义基因集在哪些细胞类型里更活跃」用 `scRNA_genesetScore.r`：它同时给 GSVA / ssGSEA（细胞类型层面）与 AddModuleScore / AUCell（单细胞层面）四种分数，可互相印证，也能看出这个基因集是不是被某一个细胞类型特异性表达。
 - 去双细胞有两个脚本，**二选一，不要串联**：`scRNA_dedoublets_step2.r`（主流程推荐，scDblFinder，逐样本建模、双细胞率可自动估计、输出只保留 counts） 与 `scRNA_DoubleFinder.r`（替代方案，DoubletFinder，整体处理、双细胞率需手填 `-DR`）。后者主要用于**交叉验证**——两者是独立算法，结论差异大时值得警惕。
+- pySCENIC 是三脚本一条链，**必须按顺序执行**：`scRNA_pyscenic_prepare.r`（Seurat → loom）→ `scRNA_pyscenic.py`（grn/ctx/aucell）→ `scRNA_pyscenic_RSS.r`（RSS + 出图 + 活性写回对象）。三者跨 R 与 Python 两个环境，靠各自的 shebang 切换，不需要手动 activate。`SCENIC.loom` **只能用 R 的 `SCopeLoomR` 读**，Python 的 `loompy` 读不了。
+- RNA velocity 分析分两步：先跑 `scRNA_velocityPrepare.r` 把「含 spliced/unspliced 的完整对象」与「分析用的子集对象」对齐，生成同时带 RNA / spliced / unspliced 三个 assay 的 h5ad；再跑 `scRNA_velocity.py` 做实际计算。**velocity 推断的是表达状态的变化方向，不等于真实谱系关系**，需要结合生物学解释。
+- 拟时序分析（`scRNA_spRNA_Monocle3.r`）是**有方向**的：根细胞由 `-C` + `-G` 指定，选错根整条时间轴方向就错了——先用轨迹图看懂结构再定根。细胞群之间的**比例**变化它不建模，那要用 scCODA。
 - 独立脚本不依赖主流程的步骤顺序：`scRNA_gene_expr.r`、`scRNA_gene_DE.r` 需要一个含 celltype 列的已注释 Seurat 对象（典型来源是 step5 的 `seu_annotated.rds`）；`scRNA_composition_sccoda.py` 直接读 h5ad 或样本 × 细胞类型计数表，与主流程无关。
 - 脚本会识别已存在的关键产物作为缓存（通常只重画图、不重算），强制重跑时删除对应 rds 即可。
 
@@ -87,6 +109,14 @@
 | `Images/genesetScore/` | `scRNA_genesetScore.r` | GSVA 分数柱状图、ssGSEA 分数柱状图、AddModuleScore 与 AUCell 的 UMAP 特征图 |
 | `Images/ROC/` | `scRNA_ROC.r` | 目标基因的 ROC 曲线图（示例为判别能力强、中等、弱三档）|
 | `Images/cellchat/single/` | `scRNA_cellchat_single.r` | 单对象分析的**全部 16 类图**：总体网络圈图、逐发送方圈图、top9 信号通路弦图、selectK 参考图、通讯模式热图/河流图/点图、通路 LR 贡献与表达图、信号角色网络与散点、贡献最大的 LR 对圈图、全部 LR 对气泡图 |
+| `Images/scanpy/pipeline/` | `scanpy/scRNA_pipeline_scanpy.py` | 质控前后小提琴图、高变基因、PCA 方差贡献、6 个分辨率的 UMAP 网格、各 cluster marker 图 |
+| `Images/scanpy/annotate/` | `scanpy/scRNA_annotate_scanpy.py` | cluster 的 UMAP、按 celltype 着色的 UMAP、细胞类型 × marker 的 dotplot |
+| `Images/scanpy/DE/` | `scanpy/scRNA_DE_scanpy.py` | marker 概览图、单个 cluster 的 top marker dotplot |
+| `Images/scTenifoldKnk/` | `scRNA_scTenifoldKnk.r` | 虚拟敲除效应网络图（中心为目标基因、节点按富集通路着色）、top20 受影响基因条形图、Z vs −log10(p.adj) 散点图、显著基因占比饼图 |
+| `Images/hdWGCNA/` | `scRNA_hdWGCNA.r` | 软阈值诊断图、基因聚类树与模块颜色条、各模块 kME 排序、hME / hub 基因打分投 UMAP、模块雷达图、模块相关性、细胞类型 × 模块 dotplot |
+| `Images/pyscenic/` | `scRNA_pyscenic_RSS.r` | RSS 特异性总图（点大小 = RSS、颜色 = Z）、逐细胞类型 RSS 排名、regulon 活性小提琴图 / Feature 图 / 点图 |
+| `Images/velocity/` | `scRNA_velocity.py` | RNA velocity 分析：dynamical 流线图、velocity genes 图、latent time 与 velocity pseudotime 的 UMAP 分布、stochastic 流线图 |
+| `Images/Monocle3/` | `scRNA_spRNA_Monocle3.r` | 拟时序与轨迹分析：UMAP 轨迹图（按 Monocle3 簇着色，含 principal graph）、拟时序着色 UMAP、沿拟时序变化基因的表达趋势、基因模块热图、空间坐标上的拟时序分布 |
 | `Images/cellchat/compare/` | `scRNA_cellchat_compare.r` | 两组对比的**全部 12 类图**：通讯数量/强度对比柱状图、差异网络圈图、2×2 总体圈图、强度对比热图、信号角色 2D 散点、通路功能相似性聚类与排名、组间差异显著通路图、outgoing 通路热图、LR 对比较气泡图（含只显示增强部分）、差异最大通路的 LR 表达对比 |
 
 各章「输出」小节末尾给出对应的示例目录。示例图仅用于展示输出形式与排版，其文件名与各章输出的 `<前缀><文件名>` 规则一致。
@@ -448,7 +478,7 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 | `-MB, --markers_before` | 无 | marker 列表 TSV（探索模式）。格式：V1=celltype, V2=markers（逗号分隔）|
 | `-MA, --markers_after` | 无 | 标注表 TSV（标注模式）。格式：Cluster, Markers, CellType |
 | `-S, --split` | false | -MB 模式下每 cell type 单独画 dotplot（marker 多时用）|
-| `-CO, --celltype_order` | 无 | dotplot 中 cell type 顺序（逗号/空格分隔，如 `B_cell, T_cell, NK`）|
+| `-CO, --celltype_order` | 无 | dotplot 中 cell type 顺序（逗号/空格分隔，如 `A, B, C`）|
 | `-W, --width` | 24 | dotplot 图宽（英寸，UMAP 硬编码 12×12）|
 | `-H, --height` | 14 | dotplot 图高（英寸，UMAP 硬编码 12×12）|
 | `-P, --prefix` | 空 | 输出文件名前缀 |
@@ -530,7 +560,7 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
 | `-I, --input` | （必填） | 注释后的 Seurat rds 路径 |
 | `-G, --genes` | （必填） | 基因列表：逗号字符串 或 文件路径 |
 | `-CT, --celltype_col` | celltype | 用于分组的 meta 列名 |
-| `-CTO, --celltype_order` | 按列默认排序 | celltype 在图中的固定顺序（逗号/空格分隔，如 `T,B,Macro`） |
+| `-CTO, --celltype_order` | 按列默认排序 | celltype 在图中的固定顺序（逗号/空格分隔，如 `A,B,C`） |
 | `-RI, --ridge_cols` | 0 | RidgePlot 列数（0 = 默认 4 列；基因少时可用 2-3） |
 | `-DS, --downsample` | 100 | 热图每组（celltype）最多取多少细胞 |
 | `-W, --width` | 12 | 图宽（英寸） |
@@ -585,7 +615,7 @@ step1/2 刻意不归一化（避免删基因前归一化导致分母不一致）
   - **Heatmap**：宽度按 `基因 × 0.45 + 1.5`，高度按 `celltype × 0.45 + 2`，同样有 `≤ -W × 1.5` 上下限
   - 所有图都有 `-W × 1.5` 或 `-W × 2` 高度上限保护，避免 30+ 基因变超长纸带
 - **RidgePlot 列数**：`-RI` 控制（0 = 默认 4 列），图例已隐藏（x 轴即细胞类型）。注意 Seurat 的参数名是 **`ncol`**——`cols` 是颜色向量（误传会报 "Insufficient values in manual scale"）
-- **celltype 顺序**：默认沿用对象内的水平顺序；`-CTO` 可指定固定顺序（如 `-CTO T,B,Macro`）
+- **celltype 顺序**：默认沿用对象内的水平顺序；`-CTO` 可指定固定顺序（如 `-CTO A,B,C`）
 
 ---
 
@@ -1127,7 +1157,8 @@ celltypeB,0.8
 
 ### 注意事项
 
-- **子集用 `celltype == ct` 硬编码**（第 196 行）：`-AC` 指定的列名**不会**被使用，实际取的是 `celltype` 列。若你的对象里细胞类型列不叫 `celltype`，需先改列名或改这一行。
+- **细胞类型子集按 `-AC` 指定的列取**：阶段 1 用 `seo[, seo@meta.data[[annotation_column]] == ct]` 逐类型切分，所以对象里的细胞类型列叫什么都能用。
+- **但阶段 2 的分辨率表，其列名必须叫 `celltype`**：脚本用 `celltype_res$celltype` 读取该表（第 230 行），表的这个列名是写死的；表里另一列必须叫 `resolution`。
 - **分辨率表按替换后的名字匹配**：表里的 `celltype` 值要与**空格换成下划线后**的名字一致（如 `T cell` 写作 `T_cell`）。
 - **两阶段是分开跑的**：阶段 1 只需 `-AC`；阶段 2 必须给 `-Res`，否则脚本报 `Please provide a valid resolution file using the -Res parameter.` 后中止。阶段 1 的 `<ct>_clustering.rds` 是阶段 2 的输入——若删掉它，阶段 2 会因找不到文件报错。
 - **细胞类型名含空格会被替换**：文件名前缀里的空格统一换成 `_`。
@@ -2072,6 +2103,1570 @@ S3,treat
 
 ---
 
+## 25 scRNA_spRNA_Monocle3.r（独立脚本）—— 拟时序与轨迹分析（Monocle3）
+
+### 功能
+
+**给细胞排出一条「发育/转变」的先后顺序，并找出沿这条顺序变化的基因**：用 Monocle3 学习轨迹图、指定根细胞、计算拟时序（pseudotime），再做空间自相关检验与基因模块分析。
+
+具体回答三个问题：
+1. **细胞之间有没有内在的转变顺序？**（轨迹图的分支结构）
+2. **哪些基因沿这条顺序变化？**（Moran's I 空间自相关检验找出在拟时序上有趋势的基因）
+3. **这些基因能分成几个功能模块？**（基因模块分析 + 模块热图）
+
+与其它脚本的分工：
+
+| 脚本 | 回答什么 |
+|---|---|
+| `scRNA_spRNA_Monocle3.r` | **细胞间的先后顺序**：谁先谁后、沿轨迹什么在变 |
+| `scRNA_clustering_step4.r` | **细胞分成几群**（无方向性）|
+| `scRNA_subcelltype_clustering.r` | **细胞类型内部分亚型**（无方向性）|
+
+拟时序分析是**有方向**的：根细胞的选择决定了时间轴的起点，选错根会得到完全不同的结论。
+
+### 输入
+
+- `-I`：Seurat rds。**建议输入已跑过 UMAP 的对象**（若没有，脚本会重新做归一化 + PCA + UMAP 并另存一份）
+- `-DT`：`SC`（单细胞）或 `SP`（空间转录组）。选 `SP` 时 metadata 必须含 `x`、`y` 两列（空间坐标）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| Seurat rds |
+| `-DT, --data_type` | 无（必填）| `SC` 或 `SP` |
+| `-C, --cluster_column` | 无 | 指定根细胞的 metadata 列名；**必须与 `-G` 同时给** |
+| `-G, --group` | 无 | `-C` 列中代表根细胞群体的取值；**必须与 `-C` 同时给** |
+| `-R1, --resolution1` | 1e-5 | Monocle3 聚类分辨率（决定轨迹图上有多少个簇/分支）|
+| `-R2, --resolution2` | 0.5 | 基因模块分析的分辨率 |
+| `-T, --threads` | 10 | 线程数（Moran's I 与模块分析）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 单细胞
+./scRNA_spRNA_Monocle3.r -I 05_annotation/05.seu_annotated.rds -DT SC \
+    -C celltype -G <root_celltype> -R1 1e-5 -R2 0.5 -T 20 -P 11. -O 11_monocle3
+
+# 空间转录组（metadata 需含 x、y 列）
+./scRNA_spRNA_Monocle3.r -I spatial.seo.rds -DT SP \
+    -C celltype -G <root_celltype> -R1 2e-4 -R2 0.5 -T 40 -P 11. -O 11_monocle3
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>seo_nor_umap.rds` | 仅当输入对象缺 UMAP 时才生成（重新归一化 + PCA + UMAP 后的对象）|
+| `<前缀>seo_cds.rds` | Monocle3 cell_data_set 对象（含拟时序、轨迹图、基因模块）|
+| `<前缀>umap_cluster.png/.pdf` | UMAP 上的轨迹图：按 Monocle3 簇着色，画出轨迹图的分支结构 |
+| `<前缀>umap_pseudotime.png/.pdf` | UMAP 上的拟时序着色（viridis 色阶）|
+| `<前缀>moran_result.csv` | 每个基因的 Moran's I 统计量（morans_I / p_value / q_value / gene）|
+| `<前缀>moran_DEGs_pseudotime.png/.pdf` | 沿拟时序变化最显著的 12 个基因的表达趋势曲线（3 列网格）|
+| `<前缀>gene_modules.csv` | 基因模块归属表（基因 → 模块编号）|
+| `<前缀>module_heatmap.png/.pdf` | 模块 × 细胞群的热图（按细胞类型聚合，列 z-score，ward.D2 聚类）|
+| `<前缀>spatial_pseudotime.png/.pdf` | 空间坐标上的拟时序分布散点图（**仅 `-DT SP` 时生成**）|
+
+示例输出：`Images/Monocle3/`。
+
+### 注意事项
+
+- **根细胞的选择决定一切**：`-C` + `-G` 指定的是拟时序的起点。给错根会让整条时间轴反过来或指向错误方向，**结论会完全改变**。建议先用 `umap_cluster.png` 看懂轨迹结构再选根。**不给 `-C`/`-G` 时脚本会用 Monocle3 的 1 号簇作根**，并给出 warning。
+- **`-C` 与 `-G` 必须成对出现**：只给一个会直接报错退出（脚本用 `is.null(cluster_column) != is.null(group)` 判断）。
+- **`-R1` 控制轨迹的分支数**：默认 1e-5 对应较粗的划分；数据复杂时可调大（历史项目里用过 2e-4）。调大后簇更多、轨迹图更碎。
+- **模块分析需要至少 30 个合格基因**：筛选条件是 `p_value < 0.05 & q_value < 0.1 & morans_I > 0.1`，不足 30 个就跳过模块分析（只打日志，不报错）。这在细胞数少或数据噪声大时很常见。
+- **Moran's I 的两个阈值是写死的**（p<0.05、q<0.1），`moran_DEGs_pseudotime` 图固定画 12 个基因——这些在脚本里没有参数可调。
+- **`-DT SP` 要求 metadata 有 `x`、`y` 列**，否则脚本在出图前直接 `quit(status = 1)`。
+- **输出对象极大**：`seo_cds.rds` 保留了完整表达矩阵，实测单样本可达 **2.8 GB**。磁盘紧张时跑完及时删除。
+- **单细胞数据做 Monocle3 的固有局限**：拟时序是「表达谱相似性」推断出的顺序，**不等于真实的时间或谱系关系**；细胞群体的比例变化（组成差异）不会被 Monocle3 建模——那是 scCODA 的领域。
+- **空间数据用 `x`、`y` 列做散点**，不做真正的空间邻域计算（与 `spatialDE` / `SPARK` 不同）。
+- 运行时若输入对象缺 UMAP 会先重新降维，耗时较长——建议直接喂已跑好 UMAP 的对象。
+
+
+---
+
+## 26 scRNA_velocityPrepare.r（配套脚本）—— 为 RNA velocity 准备输入对象
+
+### 功能
+
+**把「含 spliced/unspliced 的完整对象」与「实际要分析的对象」对齐，重建成一个同时带三个 assay 的 velocity 输入对象，并转成 h5ad**。
+
+这是 `scRNA_velocity.py` 的**前置步骤**：RNA velocity 需要同时知道每个细胞的成熟 mRNA（spliced）和未剪接 mRNA（unspliced）量，而通常这两层只存在于原始计数对象里，而分析用的是注释后的子集对象。本脚本负责把两者拼起来。
+
+具体做四件事：
+1. 用参考对象的**细胞名与基因名**做索引，从完整对象里取出对应的三层 counts（RNA / spliced / unspliced）
+2. 建一个新的 Seurat 对象：**metadata 与降维结果全部继承参考对象**，counts 换成完整对象的三层
+3. 转成 AnnData：`X` = RNA counts，`layers['spliced']` / `layers['unspliced']` = 对应层，`obsm` 里放 UMAP / PCA / Harmony 坐标
+4. 同时保存 rds 与 h5ad 两个格式
+
+### 输入
+
+- `-R`：**参考 Seurat 对象**（分析用的子集，含注释、降维结果）——决定最终保留哪些细胞、哪些基因
+- `-F`：**完整 Seurat 对象**（含 `RNA` / `spliced` / `unspliced` 三个 assay 的 counts）
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-R, --ref_seurat` | 无（必填）| 参考对象 rds（分析子集）|
+| `-F, --full_seurat` | 无（必填）| 完整对象 rds（含 spliced / unspliced）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+./scRNA_velocityPrepare.r \
+    -R 05_annotation/05.seu_annotated.rds \
+    -F 01_counts/full_seurat_with_velocity.rds \
+    -P 12. -O 12_velocity
+```
+
+### 输出
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>scRNA_velocity_input.rds` | Seurat 格式的 velocity 输入对象（RNA + spliced + unspliced 三个 assay，继承参考对象的 metadata 与降维）|
+| `<前缀>scRNA_velocity_input.h5ad` | AnnData 格式（`X` = RNA counts，`layers['spliced']` / `layers['unspliced']`，`obsm` 含 `X_umap` / `X_pca` / `X_harmony`）|
+
+### 注意事项
+
+- **两个对象的细胞名与基因名必须完全一致**：脚本用 `match()` 对齐并 `stopifnot()` 强制检查，任何一个对不上就直接报错退出（这是好事，避免静默错配）。
+- **细胞/基因的取舍完全由参考对象决定**：完整对象里多出来的细胞和基因会被丢掉。
+- **`obsm` 里只写参考对象已有的降维**：有 UMAP 就写 `X_umap`，有 PCA 写 `X_pca`，有 Harmony 写 `X_harmony`；没有就不写。**下游 `scRNA_velocity.py` 的邻居图用的是 `X_harmony`**，所以参考对象里最好有 Harmony 结果。
+- **`scRNA_velocity.py` 的 subset 模式需要 `X_pca_harmony`**：该脚本在指定 `-TC` 子集时会自己跑 PCA + harmony（`X_pca_harmony`）；不指定 `-TC` 时它直接用 `X_harmony`——此时参考对象**必须**已有 Harmony 坐标，否则会报错。
+- **转换 AnnData 时会稠密化**：`as.matrix()` 把三层稀疏矩阵转成 dense，细胞基因数多时内存占用会暴涨。这是这一步的主要瓶颈。
+- **需要 `anndataR`**：本机的 `anndataR` 支持 `layers` 参数，新版写法 `adata$layers[["spliced"]] <- ...` 可用。
+- 输出的 h5ad 体积约等于三层 counts 的总和（RNA + spliced + unspliced）。
+
+---
+
+## 27 scRNA_velocity.py（独立脚本）—— RNA velocity 分析（scVelo）
+
+### 功能
+
+**推断每个细胞的状态变化方向**：用 scVelo 计算 RNA velocity——每个细胞不只是一个点，而是有「往哪个方向走」的速度矢量。把它叠在 UMAP 上就得到流线图（stream plot），回答「细胞群体的转变方向是什么」。
+
+两个模型可选：
+- **stochastic**：更快更稳，只用表达量做局部邻域的马尔可夫链
+- **dynamical**（默认）：更精细，先从稳态模型恢复每个基因的转录动力学参数再算速度，能给出 **latent time**（比 Monocle3 的伪时序更贴近真实时间）与 **velocity genes**（哪些基因驱动了转变）
+
+### 输入
+
+- `-I`：**h5ad 文件**（由 `scRNA_velocityPrepare.r` 生成），必须含 `layers['spliced']`、`layers['unspliced']`、`obsm['X_umap']`、`obsm['X_harmony']`
+- `-AC`：`adata.obs` 里的细胞注释列名
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input-file` | 无（必填）| velocity 输入 h5ad |
+| `-AC, --annotation-column` | 无（必填）| 注释列名 |
+| `-M, --mode` | dynamical | 模型：`stochastic` 或 `dynamical` |
+| `-TC, --target-cell` | 无 | 只分析这些细胞类型（逗号分隔）；不给则用全部细胞 |
+| `-T, --threads` | 4 | 线程数 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 先用 prepare 脚本准备输入，再跑分析
+./scRNA_velocity.py -I 12_velocity/12.scRNA_velocity_input.h5ad \
+    -AC celltype -M dynamical -TC 'CellTypeA,CellTypeB' -T 40 -P 12. -O 12_velocity/result
+```
+
+### 输出
+
+输出目录 `-O` 下：
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>dynamical_stream.png/.svg` | dynamical 模型的 velocity 流线图（仅 `-M dynamical`）|
+| `<前缀>dynamical_genes.png/.svg` | velocity genes 的表达与速度图（仅 `-M dynamical`）|
+| `<前缀>latent_time_umap.png/.svg` | latent time 在 UMAP 上的分布（仅 `-M dynamical`）|
+| `<前缀>velocity_pseudotime_umap.png/.svg` | velocity pseudotime 在 UMAP 上的分布（仅 `-M dynamical`）|
+| `<前缀>stochastic_stream_pseudotime.png/.svg` | stochastic 模型的流线图 + velocity pseudotime（仅 `-M stochastic`）|
+| `<前缀><mode>_velocity_result.h5ad` | 分析后的 AnnData（含 velocity、latent_time、velocity_genes 等结果）|
+
+示例输出：`Images/velocity/`。
+
+### 注意事项
+
+- **必须先跑 `scRNA_velocityPrepare.r`**：本脚本不处理原始计数，只消费准备好的 h5ad。
+- **两种模式的图完全不同**：`stochastic` 只出一张 `stochastic_stream_pseudotime.png`；`dynamical` 出三张（stream / genes / latent_time）+ 一张 velocity_pseudotime。**文件名里带模式名，产物不会混淆**。
+- **`-TC` 不给 vs 给，处理流程不同**：不给时直接用 `X_harmony` 建邻居图（要求输入 h5ad 里有 Harmony 坐标）；给了时脚本会自己跑 `filter_and_normalize` → PCA → `harmony_integrate` → `neighbors` → `moments` → UMAP，此时用 `X_pca_harmony`。
+- **subset 模式下会重算降维**：指定 `-TC` 时 UMAP 会被重算，所以**子集的 UMAP 与原对象的 UMAP 不可直接比较**（坐标轴变了）。
+- **dynamical 模式较慢**：`recover_dynamics` 逐基因拟合转录动力学，是整个流程最耗时的一步；细胞多时建议先用 `-TC` 缩小范围。
+- **`scv.pl.velocity` 的 `save` 参数**：代码传的是带 `.png` / `.svg` 后缀的完整文件名，而 scVelo 0.3.x 的 `save` 通常按「路径前缀」处理，可能产出 `xxx.png.png` 之类的重名文件——出图后请确认实际文件名。
+- **velocity genes 的筛选是两道交集**：`fit_likelihood > 0.1` 的高质量基因 ∩ 各组 rank velocity 的前 3 名，可能为空。
+- **输出是 SVG 而非 PDF**：这是少数几个产出 SVG 的脚本；库里 Images 的示例图按惯例只放 PNG。
+- **scVelo 对 spliced/unspliced 的质量敏感**：如果原始计数里 intronic 比例不对，velocity 方向会失真。建议先用 `velocyto` / `aCellBender` 等工具重新生成这两层。
+- **velocity ≠ 真实的谱系关系**：它推断的是「当前表达状态正朝哪个方向变化」，需要结合生物学解释，不能单独作为谱系结论。
+
+
+---
+
+## 28 pySCENIC 转录因子调控网络（三脚本一套流程）
+
+本章包含三个脚本，构成一条完整流程，必须按顺序执行：
+
+| 脚本 | 运行环境 | 角色 |
+|---|---|---|
+| `scRNA_pyscenic_prepare.r` | R | 把 Seurat 对象压成 pySCENIC 能吃的 loom |
+| `scRNA_pyscenic.py` | Python | 跑 pySCENIC 的三步核心算法（grn / ctx / aucell）|
+| `scRNA_pyscenic_RSS.r` | R | 算 RSS、出图、把调控活性写回 Seurat 对象 |
+
+### 功能
+
+**找出「哪个转录因子在驱动哪一类细胞的转录状态」。**
+
+常规单细胞分析能告诉你「这一类细胞高表达哪些基因」，但回答不了「**是谁在启动这批基因**」。pySCENIC 补的正是这一环：它用**基因组上的 motif 证据**推断转录因子（TF）到靶基因的调控关系，再给每个细胞算每个 TF 的调控活性。
+
+具体回答三个问题：
+1. **哪些 TF 调控哪些基因？**（regulon：TF + 有 motif 证据的靶基因）
+2. **每个细胞里哪个 TF 在活跃？**（AUC：每细胞 × 每 regulon 的活性分）
+3. **哪个 TF 是某类细胞的标志？**（RSS：regulon 特异性分数）
+
+与库里其它脚本的分工：
+
+| 脚本 | 回答什么 |
+|---|---|
+| `scRNA_pseudobulk_DE.r` | 哪些**基因**在两组间变了 |
+| `scRNA_spRNA_enrichment.r` | 这些基因落在哪些**通路**上 |
+| `scRNA_genesetScore.r` / `scRNA_GSVA_enrichment.r` | 某个**已知基因集**的活性高低 |
+| **pySCENIC（本章）** | 这些基因是**被谁调控**的——从「现象」推到「上游调控者」|
+
+### 原理与核心概念
+
+这一节是理解整条流程的前提。概念按从上到下的依赖顺序排列。
+
+#### 1. 基因是怎么被开/关的
+
+DNA 上每个基因前面有一段**启动子（promoter）**，相当于开关面板。有一类蛋白叫**转录因子（TF, Transcription Factor）**，它结合到启动子上决定这个基因开多大。所以调控关系是：
+
+```
+TF  →  结合到靶基因的启动子  →  控制靶基因的表达量
+```
+
+#### 2. 什么是 motif
+
+**motif = 一段 6–15 个碱基的短 DNA 序列，是某个 TF 专门识别的「门牌号」。**
+
+- motif 写在 **DNA** 上，不在蛋白上
+- 一个 TF 对应一个（或几个）motif，不同 TF 的 motif 不同
+- 这是「谁调控谁」的**物理依据**
+
+为什么这点关键：**共表达 ≠ 直接调控**。基因 A 和 B 表达同步，可能只是都被第三个因素控制，A 并不调控 B。**要证明 A 真的调控 B，必须证明 B 的启动子上有 A 的 motif。**
+
+pySCENIC 用到的两个参考文件就是这个意思：
+
+| 文件 | 存的是什么 | 有多大 |
+|---|---|---|
+| `*.genes_vs_motifs.rankings.feather` | **每个基因的启动子（TSS ±10kb）里，所有 motif 的排名** ← 「每个基因有哪些门牌号」| 约 1 GB |
+| `motifs-v9-nr.*.tbl` | **motif → TF 的对应表** ← 「门牌号属于谁」| 约 100 MB |
+| `*_tfs.txt` | **该物种的 TF 名单** | 约 10 KB |
+
+#### 3. 什么是 regulon
+
+**regulon = 一个 TF + 它直接调控的那批靶基因。**
+
+构建过程：
+1. GRNBoost2 找出「和 TF X 表达高度相关的基因」→ 候选列表（**只有共表达证据**）
+2. 逐个查这些候选基因的启动子：**有没有 TF X 的 motif？**
+3. 有的留下，没有的扔掉 → 剩下的这批就构成一个 regulon
+
+命名规则：`TF名(+)` 表示激活型（TF 高则靶基因高），`TF名(-)` 表示抑制型。实际跑出来**绝大多数是 `(+)`**，因为抑制型需要额外的负相关判据，默认参数下很少出现。
+
+#### 4. 什么是 AUC（AUCell 打分）
+
+**AUC = 某个 regulon 在【某一个细胞】里有多活跃**，范围 0–1。
+
+算法：
+1. 把这个细胞里所有基因**按表达量从高到低排序**
+2. 看这个 regulon 的靶基因**排在前面的占多少**
+3. 算这条恢复曲线的下面积（AUC）
+
+直观理解：**如果某个 regulon 的靶基因普遍排在这个细胞表达谱的最前面，说明这个 regulon 在这个细胞里很活跃。**
+
+结果是一张矩阵：**细胞 × regulon**。
+
+- **不要和 `scRNA_ROC.r` 的 AUC 混淆**——那是 ROC 曲线下面积、衡量两组判别能力；AUCell 的 AUC 是基因排序恢复曲线的面积、衡量单细胞里的调控活性。两者同名但毫无关系。
+
+#### 5. 什么是 RSS
+
+**RSS（Regulon Specificity Score）= 某个 regulon 有多「专属」于某一类细胞**，范围 0–1。
+
+**RSS 是从 AUC 算出来的**，算法是 **JSD（Jensen-Shannon 散度）**，不是 z-score：
+
+```
+RSS = 1 - sqrt(JSD(regulon 的活性分布, 该细胞类型的分布))
+```
+
+拆开说：
+1. 把某个 regulon 的 AUC **按细胞归一化** → 得到「这个 regulon 的活性在各细胞间的分布」
+2. 该细胞类型的分布 = 「哪些细胞属于这一类」（是 = 1，否 = 0）
+3. 算两个分布的 **JSD**——越小说明两个分布越像
+4. `1 - sqrt(JSD)` → 越像则 RSS 越接近 1
+
+含义：**RSS 接近 1 说明这个 regulon 只在这一类细胞里活跃；接近 0 说明它在所有细胞里活性都差不多。**
+
+**RSS 数值天然偏小**，这是 JSD 的性质决定的，不是数据差。以数百个 regulon × 十余类细胞的常见规模为例：RSS 中位数往往在 0.05 上下，最高也只有 0.3 左右，`RSS > 0.1` 的格子通常只占两三成。所以读 RSS 要**横向比较**（同一列里谁高谁低），不能把 0.3 当成「只有 30% 特异性」。
+
+#### 6. 概念关系一览
+
+| 概念 | 粒度 | 回答 | 谁产生的 |
+|---|---|---|---|
+| motif | DNA 序列 | 这个 TF 认什么序列 | CisTarget 数据库 |
+| regulon | TF + 靶基因集合 | 谁调控哪些基因 | `pyscenic ctx` |
+| AUC | **单个细胞** × 单个 regulon | 这个细胞里这个 TF 活跃吗 | `pyscenic aucell` |
+| RSS | **一个细胞类型** × 单个 regulon | 这个 TF 是这类细胞的标志吗 | `calcRSS`（脚本 3）|
+
+一句话：**motif 是依据，regulon 是关系，AUC 是原料，RSS 是提炼后的结论。**
+
+### 三个脚本的分工与数据流
+
+```
+Seurat 对象（表达矩阵）
+    │
+    │  [脚本 1] scRNA_pyscenic_prepare.r
+    │  过滤低检出基因 → 可选抽细胞 → 写 loom
+    ▼
+expr_norm.loom
+    │
+    │  [脚本 2] scRNA_pyscenic.py    ← 内部调 3 次 pyscenic CLI
+    │
+    ├─ ① pyscenic grn     （共表达推断）      → adj.csv
+    ├─ ② pyscenic ctx     （motif 富集）      → regulons.csv
+    └─ ③ pyscenic aucell  （逐细胞活性打分）  → SCENIC.loom
+    │
+    │  [脚本 3] scRNA_pyscenic_RSS.r
+    │  算 RSS → 出图 → 活性写回对象
+    ▼
+rss.csv / 5 张图 / seu_SCENIC.rds
+```
+
+**为什么要拆成三个脚本而不是一个**：这条流程跨**两个环境**（R 与 Python），而 shebang 只能指向一个解释器。拆开之后每个脚本的 shebang 指向自己需要的环境，用户不需要手动 `conda activate` 或切环境：
+
+```
+scRNA_pyscenic_prepare.r   #!/…/miniforge3/envs/old_base/bin/Rscript
+scRNA_pyscenic.py          #!/…/miniforge3/envs/pySCENIC/bin/python
+scRNA_pyscenic_RSS.r       #!/…/miniforge3/envs/old_base/bin/Rscript
+```
+
+另外三步的**耗时差极大**（grn 十几分钟 → ctx 可能几小时 → aucell 几分钟），分开跑可以在 ctx 失败后只重跑 ctx，不用从头再来。
+
+### 每一步在做什么，为什么要这么做
+
+#### 脚本 1：准备输入
+
+**① 抽表达矩阵**——用 `-L data`（LogNormalize 之后）而不是 counts。GRNBoost2 基于表达量相关性的回归，用归一化后的值可以避免测序深度带来的伪相关。
+
+**② 过滤基因（`-MG`，默认 50）**——只保留至少在 50 个细胞里检出的基因。一个只在十几个细胞里检出的基因，它的「表达量」主要是 dropout 噪声，算出来的关联是假的。
+
+**③ 抽细胞（`-NC`，默认 `0` = 全部保留）**——GRNBoost2 是逐基因跑梯度提升，成本 ≈ 基因数 × 细胞数。全量细胞会到小时级，且细胞数过万后结果基本稳定，抽样边际收益很小。
+⚠️ **抽样会漏掉稀有细胞类型**，如果某类细胞只有几十个，抽 2000 后可能只剩个位数，RSS 就不可靠——这种数据应设 `-NC 0` 用全部细胞。
+
+**④ 写 loom**——loom 是 pySCENIC 的输入格式，必须带 `Gene`（行）与 `CellID`（列）两个属性。
+
+#### 脚本 2：三步核心算法
+
+**⑤ `pyscenic grn`——共表达推断**
+对每一个 TF，用梯度提升回归（GRNBoost2）拟合「该 TF 的表达 → 各靶基因的表达」，用树模型的特征重要性作为 TF→靶基因的关联强度。**这一步只看共表达，不看 DNA 序列。** 输出 `TF, target, importance` 三列。
+
+**⑥ `pyscenic ctx`——motif 富集，把共表达升级成直接调控**
+对每个 TF 的候选靶基因，查它们的启动子上**这个 TF 的 motif 是否显著富集**，只保留富集的靶基因。这一步是 pySCENIC 的核心，也是最慢的一步。
+默认开启的 `--mask-dropouts` 对应 CLI 的 `--mask_dropouts`（关闭用 `--no-mask-dropouts`）：把 dropout（表达量为 0）当作**缺失**而非真实的 0。单细胞里的 0 往往是没测到，当成 0 会低估相关性。
+
+**⑦ `pyscenic aucell`——逐细胞活性打分**
+用 AUCell 给每个细胞的每个 regulon 打分（算法见上文「什么是 AUC」）。
+
+#### 脚本 3：特异性分析与出图
+
+**⑧ 读 loom**——**必须用 `SCopeLoomR::open_loom`（hdf5r 直读），不能用 Python 的 `loompy`**。`pyscenic aucell` 写出的 loom 不符合 loom v3 规范（多列属性的 dtype 不合法），`loompy` 会报 `Row attribute 'Regulons' dtype ... is not allowed`。
+
+**⑨ 对齐细胞**——loom 里只有抽样后的细胞，Seurat 对象有全部细胞，取交集。
+
+**⑩ 算 RSS**——见上文「什么是 RSS」。
+
+**⑪ 出图**——RSS 总图、逐细胞类型排名图、regulon 活性小提琴图 / Feature 图 / 点图。三张 `regulon_*` 图画的都是 **AUC 活性分**（不是靶基因表达量），具体读法见下文「结果图怎么读」。
+
+**⑫ 把活性写回对象**——把「细胞 × regulon」的 AUC 矩阵作为 metadata 列加进 Seurat 子集并保存 rds。这一步很重要：否则跑完只有图，想换个 TF 再画一次就得重跑整个 pySCENIC（几小时）。
+
+### 结果图怎么读
+
+本章产出 5 张图，它们是**同一份数据的不同视角**，配合起来读：
+
+| 图 | 作用 | 怎么读 |
+|---|---|---|
+| `RSS_plot` | **找标志物** | 大点 + 深绿（绝对值 + 相对排名）|
+| `RSS_oneSet` | **看细节** | 每类细胞 top5 TF 排名 + 有几个核心 TF |
+| `regulon_dotplot` | **验证** | 这些 regulon 的活性是否真的集中在该细胞类型（颜色 = 平均 AUC，大小 = 活跃细胞比例）|
+| `regulon_violin` | **验证** | 活性分布是否真的集中在一类细胞 |
+| `regulon_feature` | **看连续性** | 是一群细胞点亮还是沿轨迹渐变 |
+
+**唯一需要交叉验证的**：**RSS 是相对量**（分布相似度，回答「在这类细胞里是不是排第一」），**AUC 是绝对量**（回答「这类细胞里到底有多活跃」）。RSS 高只说明相对集中，不代表绝对活性高——所以要用 `regulon_dotplot` / `regulon_violin` 看 AUC 的绝对水平来确认。
+
+**另一个必须记住的点**：本章三张 `regulon_*` 图画的全是 **regulon 的 AUCell 活性分（AUC）**，**不是靶基因的表达量**。AUC 是由「靶基因在该细胞表达谱里的排序位置」算出来的聚合量——靶基因表达量都不高、但都挤在排序前列时，AUC 依然可以很高。
+
+#### `RSS_plot`：点的两个编码别搞混
+
+这是最容易读错的一张图——**点的大小和颜色编码的是两个不同的量**：
+
+| 视觉元素 | 编码 | 含义 | 陷阱 |
+|---|---|---|---|
+| 点的**面积** | **RSS 绝对值** | 这个 regulon 在这类细胞里到底有多专属 | — |
+| 点的**颜色** | **Z 值**（= `scale(rss)`，**按细胞类型列标准化**）| 这个 regulon **在这一类细胞内部**、相对其它所有 regulon 有多突出 | 高 Z 但低 RSS = 其实是「矮子里拔将军」|
+
+源码依据（`SCENIC::plotRSS`）：
+```r
+rssNorm <- scale(rss)          # scale() 默认按【列】= 细胞类型 标准化
+rssNorm[rssNorm < 0] <- 0
+if (!is.null(zThreshold)) rssSubset[rssSubset < zThreshold] <- 0
+dotHeatmap(rss.df, var.size = "RSS", var.col = "Z", ...)
+```
+实测确认 `scale(rss)` 的**列均值 = 0、列标准差 = 1**（行均值不是 0），所以是**按细胞类型**标准化。
+
+颜色阶梯（脚本设为 `col.low="#cfd9ed"` → `col.mid="#66CC66"` → `col.high="#FFCC33"`）：淡蓝 = 这一列里平平无奇，绿 = 中等，橙黄 = 这一列里最突出。
+
+**找标志 TF 的正确姿势**：找**又大又深绿**的点。五种典型情况（数值为示意）：
+
+```
+regulon_A   细胞类型_1   RSS=0.36  Z=4.0    ← 又大又深绿 → 真正的标志候选
+regulon_B   细胞类型_2   RSS=0.21  Z=8.6    ← 中等大小 + 最黄
+regulon_C   细胞类型_3   RSS=0.29  Z=6.3
+regulon_D   细胞类型_4   RSS=0.02  Z=10.7   ← Z 最高但 RSS 极小 → 不要据此下结论
+regulon_E   细胞类型_5   RSS=0.04  Z=10.5   ← 同上
+```
+
+⚠️ **`-ZW`（zThreshold，默认 3）会把 Z < 3 的格子置 0**，那些格子只显示很小的淡色点——那不代表「没有调控」，只是没进入可视范围。实际数据里**绝大多数格子都低于这个阈值**（常常超过九成），所以图上看不到颜色是常态。
+
+#### `regulon_dotplot`：两个维度分别看什么
+
+行 = 细胞类型，列 = regulon。**两个维度编码两个不同的问题**：
+
+| 视觉元素 | 编码 | 含义 |
+|---|---|---|
+| 点的**颜色** | **平均 AUC**（原始值，未标准化）| 这个 regulon 在这类细胞里**到底有多活跃**（绝对水平）|
+| 点的**大小** | **AUC 超过该 regulon 全局 75 分位的细胞比例** | 这个 regulon 在这类细胞里**有多普遍地活跃**（一致性）|
+
+**为什么不直接用 Seurat `DotPlot` 默认的「AUC > 0 的细胞比例」**：AUCell 的 AUC 在几乎每个细胞里都 > 0，实测该比例中位数 **0.990**、**一半的 regulon 是 1.000**，点大小会全部顶到最大，失去区分度。改用「超过全局 Q75 的比例」后拉开到 **0.00–1.00**。
+
+**「超过全局 Q75 的比例」怎么理解**（容易误解的一点）：
+
+1. 先算这个 regulon 在**全部细胞**上 AUC 的 75 分位 → 得到**一个固定门槛**（每个 regulon 各自一个数，例如 0.042）
+2. 再**在每个细胞类型内部**统计「跨过这个门槛的细胞占多少」
+3. 所以**全局范围内这个比例恒为 25%**（按 75 分位的定义），但**拆到每个细胞类型就不一样了**
+
+同一个阈值拿到各类细胞里分别算，结果会差很多（下面是示意量级）：
+```
+细胞类型_1   1.000   ← 全部细胞都跨过门槛
+细胞类型_2   0.56
+细胞类型_3   0.58
+细胞类型_4   0.04    ← 只有 4%
+细胞类型_5   0.02
+```
+差 60 倍，这就是图上的区分度来源。
+
+**读法：`0.25` 是中性线。**
+- **明显 > 0.25** = 这个 regulon 在这类细胞里富集
+- **≈ 0.25** = 和全体细胞平均水平一样，没有富集
+- **接近 0** = 这类细胞里这个 regulon 基本关闭
+
+**找标志物**：颜色偏黄（平均 AUC 高）**且**点大（比例高）。只有颜色黄但点很小，说明少数细胞很高、整体并不普遍。
+
+#### 其余三张
+
+- **`RSS_oneSet`**：每个细胞类型一张散点排序曲线，x 轴 = regulon 按 RSS 排名的名次，y 轴 = RSS 值，top5 带标签框。**曲线左侧的「悬崖」有多陡 = 这一类细胞有几个核心 regulon**；曲线平缓说明特异性分散在很多 regulon 上。
+- **`regulon_violin`**：按细胞类型分组的 **AUC** 分布小提琴图，用来确认这个 regulon 的活性是不是**真的只集中在那一类细胞**（一个小提琴高、其余平 = 干净）。
+- **`regulon_feature`**：UMAP 上按 **AUC** 着色。**一群细胞突然点亮 = 对应离散细胞类型；沿轨迹渐变 = 连续的分化过程**。
+
+#### 一句话读图顺序
+
+```
+1. RSS_plot         → 哪些 TF 是哪些细胞类型的标志（又大又深绿）
+2. RSS_oneSet       → 每类细胞有几个核心 TF、排名前几的是谁
+3. regulon_dotplot  → 验证：AUC 绝对水平（颜色）与活跃普遍程度（大小），0.25 为中性线
+4. regulon_violin   → 验证：活性分布真的集中
+5. regulon_feature  → 空间/连续性：是一群细胞点亮还是沿轨迹渐变
+```
+
+
+### 输入
+
+| 脚本 | 需要什么 |
+|---|---|
+| `scRNA_pyscenic_prepare.r` | 一个 Seurat rds（建议是已注释的、跑过降维的对象）|
+| `scRNA_pyscenic.py` | 脚本 1 产出的 loom + **物种对应的三个参考文件** |
+| `scRNA_pyscenic_RSS.r` | 脚本 1 用的同一个 Seurat rds + 脚本 2 产出的 `SCENIC.loom` |
+
+**参考文件（`-RD` 指定的目录下，按 `-S` 物种自动选）**：
+
+小鼠（`-S mouse`）：
+- `mm_mgi_tfs.txt`
+- `mm10__refseq-r80__10kb_up_and_down_tss.mc9nr.genes_vs_motifs.rankings.feather`
+- `motifs-v9-nr.mgi-m0.001-o0.0.tbl`
+
+人（`-S human`）：
+- `hs_hgnc_tfs.txt`
+- `hg38__refseq-r80__500bp_up_and_100bp_down_tss.mc9nr.genes_vs_motifs.rankings.feather`
+- `motifs-v9-nr.hgnc-m0.001-o0.0.tbl`
+
+三个文件可从 CisTarget 数据库与 pySCENIC 仓库下载，加起来约 1.2 GB。
+
+### 参数
+
+**`scRNA_pyscenic_prepare.r`**
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| Seurat rds |
+| `-A, --assay` | RNA | 表达矩阵所在 assay |
+| `-L, --layer` | data | 用哪一层：`data`（推荐）或 `counts`；`scale.data` 是稠密矩阵，不支持 |
+| `-MG, --min_cells` | 50 | 至少多少个细胞检出才保留该基因 |
+| `-NC, --n_cells` | **0（全部细胞）** | 抽样细胞数；默认保留全部细胞。细胞数很多、只求速度时可设 2000 等值抽样 |
+| `-SD, --seed` | 123 | 抽样随机种子 |
+| `--title` | pySCENIC input | 写进 loom 的标题（无短参数，避免与库内 `-T`=线程的约定混淆）|
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+**`scRNA_pyscenic.py`**
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input-loom` | 无（必填）| 脚本 1 产出的 loom |
+| `-S, --species` | 无（必填）| `mouse` 或 `human`，决定用哪套参考文件 |
+| `-RD, --ref-dir` | ref_data | 三个参考文件所在目录 |
+| `-GM, --grn-method` | grnboost2 | `grnboost2`（快）或 `genie3`（慢但另一套算法）|
+| `-ST, --steps` | all | 要跑哪些步骤：`grn,ctx,aucell` 任意组合，或 `all` |
+| `-T, --threads` | 12 | 传给 pyscenic 的 worker 数；共享服务器上建议不要拉满 |
+| `-SE, --seed` | 777 | grn 步骤的随机种子 |
+| `--mask-dropouts` / `--no-mask-dropouts` | 开 | 控制是否给 ctx 传 `--mask_dropouts`；默认开，用 `--no-mask-dropouts` 关闭（不开无短参数，因为「默认开」的开关加短参数容易误读）|
+| `-F, --force` | 关 | 输出已存在时也强制重跑 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+**`scRNA_pyscenic_RSS.r`**
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input_rds` | 无（必填）| 与脚本 1 相同的 Seurat rds |
+| `-L, --input_loom` | 无（必填）| 脚本 2 产出的 `SCENIC.loom` |
+| `-AC, --annotation_column` | 无（必填）| 细胞类型列名 |
+| `-TF, --target_tfs` | 空 | 单独画哪些 regulon，逗号分隔（如 `TF1(+),TF2(+)`）；空则每类细胞自动取 RSS 前 `-NT` 个 |
+| `-NT, --n_top` | 2 | 每类细胞取前几个 regulon 做点图与汇总热图 |
+| `-OS, --one_set` | 空 | **只影响逐细胞类型排名图**（2×2 布局，逗号分隔）；空则取 max RSS 最高的 4 类。汇总热图始终覆盖全部细胞类型 |
+| `-ZW, --z_threshold` | 3 | 传给 `plotRSS` 的 zThreshold |
+| `-TH, --rss_threshold` | 0.1 | 传给 `plotRSS` 的 thr；低于此值的格子留白 |
+| `-W, --width` | 10 | **仅** RSS 总图宽度（英寸）；多面板 regulon 图自动定尺寸 |
+| `-H, --height` | 12 | **仅** RSS 总图高度（英寸）；多面板 regulon 图自动定尺寸 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# ① 准备 loom
+./scRNA_pyscenic_prepare.r -I 05_annotation/05.seu_annotated.rds \
+    -A RNA -L data -MG 50 -P 01. -O 12_pyscenic
+
+# ② 跑三步核心算法（参考文件放在 ./ref_data）
+./scRNA_pyscenic.py -I 12_pyscenic/01.expr_norm.loom -S mouse \
+    -RD ref_data -T 12 -P 01. -O 12_pyscenic
+
+# ②' 只重跑 ctx（比如 ctx 中途失败）
+./scRNA_pyscenic.py -I 12_pyscenic/01.expr_norm.loom -S mouse \
+    -RD ref_data -ST ctx -T 12 -P 01. -O 12_pyscenic
+
+# ③ 算 RSS 并出图
+./scRNA_pyscenic_RSS.r -I 05_annotation/05.seu_annotated.rds \
+    -L 12_pyscenic/01.SCENIC.loom -AC celltype \
+    -TF 'TF1(+),TF2(+)' -NT 2 -P 02. -O 12_pyscenic/RSS
+```
+
+不加 `-TF` 时，脚本会自动挑「每类细胞 RSS 前 `-NT` 个」的 regulon 来画小提琴图/Feature/Dot。
+
+### 输出
+
+**`scRNA_pyscenic_prepare.r`**
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>expr_norm.loom` | pySCENIC 输入（`Gene` = 行，`CellID` = 列）|
+
+**`scRNA_pyscenic.py`**
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>adj.csv` | 共表达邻接表（`TF, target, importance`）|
+| `<前缀>regulons.csv` | regulon 表（每个 TF × motif × 靶基因列表）|
+| `<前缀>SCENIC.loom` | AUCell 结果（含 `Regulons` / `RegulonsAUC` / `RegulonsAUCThreshold`）|
+
+**`scRNA_pyscenic_RSS.r`**
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>rss.csv` | RSS 矩阵（regulon × 细胞类型）|
+| `<前缀>RSS_plot.png/.pdf` | RSS 总图：行 = regulon、列 = 细胞类型，点大小 = RSS、颜色 = Z |
+| `<前缀>RSS_oneSet.png/.pdf` | 逐细胞类型的 RSS 排名（2×2 布局）|
+| `<前缀>regulon_violin.png/.pdf` | 目标 regulon 的活性小提琴图（按细胞类型分组）；面板自动排成接近正方形的网格 |
+| `<前缀>regulon_feature.png/.pdf` | 目标 regulon 活性投到降维图上；同样自动排成接近正方形的网格 |
+| `<前缀>regulon_dotplot.png/.pdf` | 目标 regulon 的活性点图：颜色 = 平均 AUC，点大小 = AUC 超过该 regulon 全局 75 分位的细胞比例；宽度与高度随 regulon / 细胞类型数自动调整 |
+| `<前缀>seu_SCENIC.rds` | 已把「细胞 × regulon」活性矩阵加进 metadata 的 Seurat 子集 |
+
+示例输出：`Images/pyscenic/`。
+
+### 注意事项
+
+- **三个脚本必须按顺序跑**，中间产物（loom）不能跨物种复用。
+- **Seurat v5 的拆分层会自动合并**：若 assay 里是 `counts.1` / `counts.2` 这种拆分层（merge 后常见），脚本 1 会自动 `JoinLayers` 再取矩阵，不需要事先手动合并。
+- **图件尺寸自适应**：`regulon_violin` / `regulon_feature` 按面板数自动排成**接近正方形**的网格（面板数 n 时取 `ncol = ceil(sqrt(n))`），不会因为 regulon 多而变成一条长条；`regulon_dotplot` 宽度随 regulon 数加宽。`-W` / `-H` **只作用于 RSS 总图**。
+- **5 张结果图各有分工，配合着读**：找标志物看 `RSS_plot`（**又大又深绿**的点）、看排名看 `RSS_oneSet`、用 `regulon_dotplot`（颜色 = 平均 AUC、大小 = 活跃细胞比例）与 `regulon_violin` 交叉验证绝对活性、用 `regulon_feature` 看连续性。详见「结果图怎么读」一节。
+- **三张 `regulon_*` 图画的是 AUC，不是靶基因表达量**：`regulon_violin` / `regulon_feature` / `regulon_dotplot` 用的都是写回 metadata 的 **AUCell 活性分**。AUC 由「靶基因在该细胞表达排序中的位置」聚合而来，与靶基因的绝对表达量不是一回事。
+- **`regulon_dotplot` 没有沿用 Seurat `DotPlot` 的默认统计量**：默认的「AUC > 0 的细胞比例」几乎恒为 100%（实测中位数 0.990、一半 regulon 为 1.000），点大小会失去信息。改用「AUC 超过该 regulon 全局 75 分位的细胞比例」，该比例在全细胞范围恒为 **0.25**，在单个细胞类型内才拉开差异，**0.25 即中性线**。
+- **`RSS_plot` 的大小与颜色编码不同的量**：大小 = RSS 绝对值，颜色 = Z（**按细胞类型标准化**，即在该类细胞内部比较 regulon）。**高 Z 但小点 = 矮子里拔将军，不能当标志物**。
+- **环境由 shebang 决定**：`scRNA_pyscenic.py` 必须用 pySCENIC 环境的 python 执行。若用别的 python 跑，脚本会在找 `pyscenic` CLI 时直接报错（CLI 是按 `sys.executable` 同目录定位的，不在 PATH 里）。
+- **`pyscenic` CLI 不支持 `python -m pyscenic`**（该包没有 `__main__`），必须调 bin 目录下的可执行文件。
+- **ctx 是最慢的一步**，可能几小时。输出已存在时默认跳过；要重跑加 `-F`，或只跑 `-ST ctx`。
+- **`SCENIC.loom` 不能用 Python 的 `loompy` 读**——不符合 loom v3 规范（多列属性 dtype 不合法）。只能在 R 里用 `SCopeLoomR::open_loom` 读。这是流程「必须回 R」的根本原因。
+- **`-NC` 默认不抽样**（保留全部细胞），避免静默丢数据。它的主要用途是**加速**：细胞数过万时 pySCENIC 会跑很久，可设 `-NC 2000` 等值抽样——但抽样会漏掉稀有细胞类型（某类只有几十个细胞时可能只剩个位数，RSS 不可靠），这类数据不要抽样。
+- **regulon 数量取决于数据**：质控差、细胞数少时 `ctx` 可能只输出极少甚至零个 regulon；零个时 `aucell` 无内容可打分，脚本会给出提示。
+- **`(+)` / `(-)` 是调控方向**：实际几乎全是 `(+)`（激活型）。抑制型需要额外的负相关判据，默认参数下很少出现。
+- **RSS 数值天然偏小**（JSD 性质），要横向比较而非看绝对值；`plotRSS` 的 `-TH` 阈值以下的格子会被留白，看起来「空」是正常的。
+- **RSS ≠ 显著性**：它是分布相似度，没有 p 值。判断某个 TF 是不是某类细胞的标志，看它在那一列的 RSS 是否明显高于其它列。
+- **`calcRSS` 内部用 zThreshold 做可视化分组**，与统计检验无关。
+- **AUCell 的 AUC 与 ROC 的 AUC 无关**，别混用。
+- **输出体积**：`adj.csv` 可达上百 MB（实测 300 细胞时 47 MB，2000 细胞时约 68 MB），`seu_SCENIC.rds` 数十 MB，注意磁盘空间。
+- **pySCENIC 版本差异**：本流程按 pySCENIC 0.12.x（Python 3.7）验证；新版本 CLI 参数可能变化，尤其是 `ctx` 的 `--mask_dropouts` 默认值在 0.9.16 之后改过（旧版默认开、新版默认关），所以脚本显式传参而不依赖默认值。
+
+
+---
+
+## 29 scRNA_hdWGCNA.r（独立脚本）—— 高维共表达网络分析（hdWGCNA）
+
+### 功能
+
+**在单个细胞类型内部找出「哪些基因一起变化」，并把它们归成模块，再从每个模块里挑出最核心的 hub 基因。**
+
+回答三个问题：
+
+1. **这个细胞类型里，基因可以分成几组共表达模块？**（模块 = 一群表达高度同步的基因，通常对应同一条通路或同一个调控程序）
+2. **每个模块里谁是「hub」？**（模块内连接度最高的基因，往往是这个程序的关键调控者）
+3. **这些模块在不同样本/分组之间活性有没有差别？**（用模块特征值 hMEs 在细胞上打分）
+
+**与普通 WGCNA 的区别**：单细胞数据 dropout 严重，直接做 WGCNA 会得到充满噪声的模块。hdWGCNA 先把细胞按「细胞类型 × 样本」聚成 **metacell**（每 25 个邻近细胞合成一个伪细胞），在 metacell 上建网络，从而大幅降噪。所以它**必须先指定一个目标细胞类型**，一次只分析一类。
+
+**与其它脚本的分工**：
+
+| 脚本 | 回答什么 |
+|---|---|
+| `scRNA_clustering_step4.r` | 细胞之间有哪几群（cluster）|
+| `scRNA_gene_DE.r` / `scRNA_pseudobulk_DE.r` | 两组之间哪些基因变了 |
+| `scRNA_GSVA_enrichment.r` / `scRNA_genesetScore.r` | 已知通路的活性高低 |
+| **`scRNA_hdWGCNA.r`** | **在已知通路之外，数据自己能把基因分成哪几组、谁在组里最核心** |
+
+### 核心概念
+
+整条流程可以串成一句话：
+
+```
+共表达（哪些基因同涨同落）
+  → 取幂（把弱相关压掉、强相关保留）
+  → TOM（两个基因共享多少邻居）
+  → 切模块（一组一起变化的基因）
+  → kME（模块里谁最核心 = hub）
+  → ME（把整个模块压成一个数，给每个细胞打分）
+```
+
+#### 术语速查
+
+| 术语 | 一句话含义 |
+|---|---|
+| **metacell** | 把 k 个邻近细胞平均成一个「伪细胞」，用来抹平 dropout |
+| **共表达** | 两个基因在细胞之间同涨同落 |
+| **soft power（软阈值）** | 把相关系数取幂 `abs(r)^power`，压低弱相关、放大强相关 |
+| **TOM** | 基因之间的拓扑重叠度：两个基因共享的邻居越多，值越高 |
+| **模块（module）** | 一群表达高度相关的基因，用颜色命名；`grey` = 未归入任何模块 |
+| **kME** | 某个基因与它所在模块整体活性的相关度；越高说明这个基因越能代表该模块 |
+| **ME** | module eigengene，模块特征值：把整个模块压成**一个数**，代表该模块在某细胞里的活跃程度 |
+| **hME** | 校正后的 ME：去掉与其它模块的重叠，可跨模块比较 |
+| **hub gene** | 模块里 kME 最高的基因 |
+
+#### 1. 共表达是什么
+
+两个基因在细胞之间「同涨同落」就叫共表达：
+
+```
+细胞:      c1   c2   c3   c4   c5
+基因A:     5.2  0.1  4.8  0.3  5.5
+基因B:     4.9  0.2  5.1  0.4  5.2    ← 和 A 几乎同步
+基因C:     0.1  4.7  0.2  5.0  0.3    ← 和 A 无关
+```
+
+A 和 B 高度共表达。**共表达的基因通常因为被同一个转录因子、或同一条通路共同调控**，所以共表达模式能揭示「程序」。
+
+**为什么模块有意义**：一组成员基因表达同步 → 找到模块 = 找到这个细胞类型里**在运作的生物学程序**；找到 hub = 找到这个程序的**关键节点**。
+
+#### 2. 为什么必须先做 metacell
+
+单细胞测序有大量基因测不到（表达量低就记为 0），这叫 dropout。后果是**真实的共表达被这些假的 0 稀释**，相关系数被低估，直接做 WGCNA 会得到充满噪声的模块。
+
+解法：把 k 个「表达谱相近」的细胞**平均成一个伪细胞**（`k = 25`，即 25 个细胞合成 1 个 metacell）。
+
+好处有三条：
+- dropout 被平均掉（一个细胞漏了，其它 24 个会补上）
+- 细胞数大幅减少，计算量从「几万细胞」降到「几百 metacell」，WGCNA 才跑得动
+- 因为是在**同一细胞类型、同一样本内部**聚类，细胞类型之间的差异没有被抹掉
+
+`max_shared = 10` 允许不同 metacell 共用最多 10 个细胞；`min_cells = 100` 表示某样本里该细胞类型不足 100 个就跳过（100 个细胞只能合成 4 个 metacell，太少）。
+
+#### 3. 软阈值：取幂到底改变了什么
+
+普通相关系数 r 在 −1 到 1 之间。WGCNA 不直接用，而是取幂：
+
+```
+邻接强度 = abs(r) ^ β        β = soft power
+```
+
+效果（以 β=6 为例）：
+
+| 真实相关 r | r^6 | 结果 |
+|---|---|---|
+| 0.30（弱，多半是噪声）| 0.0007 | **几乎归零** |
+| 0.60（中等）| 0.047 | 很低 |
+| 0.90（强）| 0.53 | 保留 |
+
+**取幂的作用就是压低弱相关、放大强相关**，把网络变稀疏。
+
+β 怎么选：希望网络成为「无标度网络」（少数基因连接极多、多数基因连接很少，这是真实生物网络的特征）。看 `softPowers.png` 左上角，**第一个让 R² 越过 0.8 的 β 就是合适的值**。默认值 `3` 只是占位，**每份数据都必须重新看图确定**。
+
+- β 太小 → 弱相关都保留 → 网络过密、模块糊在一起
+- β 太大 → 只剩极强相关 → 模块碎成小块、大量基因掉进 grey
+
+#### 4. TOM：为什么不直接用相关系数
+
+```
+TOM_ij = (两个基因共同邻居的权重之和 + 直接权重) / 归一化分母
+```
+
+含义：**两个基因如果共享很多「邻居基因」，它们的连接就更可信。**
+
+为什么需要：两个基因可能碰巧直接相关（比如都受细胞大小影响），但它们如果在网络里没有共同邻居，说明不在同一个程序里。TOM 把「是否共享邻居」这层结构考虑进去，比单独看相关系数稳健得多。脚本把 TOM 存到 `TOM/` 目录，文件大小随基因数平方增长，可能很大。
+
+#### 5. 模块是怎么切出来的
+
+有了 TOM，把基因按「距离 = 1 − TOM」做**层次聚类**（就是 `Dendrogram.png` 那棵树），再用动态剪切树把树枝剪成几段——**每一段就是一个模块**。
+
+- **模块数不是固定的**，由算法根据数据结构决定，同一份数据换 β 就会变
+- 模块用颜色命名（turquoise / blue / brown / …）
+- **`grey` 是「没归入任何模块」的基因**，通常是噪声或孤立基因，所有分析都排除它
+- `gene_modules.csv` 里只列出**已剔除 grey** 的基因，这些才是下游分析的基数
+
+模块大小差异通常很大（大的几百个基因、小的只有几十个），这不是异常，反映的是各程序涉及的基因数量不同。
+
+#### 6. kME 与 hub 基因
+
+```
+kME = 某个基因的表达 与 它所在模块的整体活性 的相关系数
+```
+
+- kME 接近 1 → 这个基因几乎能代表整个模块
+- kME 接近 0 → 这个基因虽在模块内，但只是边缘成员
+
+**hub 基因 = 模块里 kME 最高的那些。** 想拿 hub 清单，从 `gene_modules.csv` 里按 `kME_<模块名>` 列降序取前 10 个（`plotKMEs.png` 每个面板方框里标的就是这 10 个）。
+
+#### 7. ME：怎么把几百个基因变成一个数
+
+**先说清楚：被压缩的不是基因，而是「一个细胞在这个模块上的表达数据」。**
+
+一个模块有 494 个基因 → **一个细胞**在这 494 个基因上就有 **494 个表达值** → ME 把它们换成 **1 个数值**。基因本身没有消失。
+
+```
+细胞 c1 在这个模块上：
+  GeneA=5.2  GeneB=4.9  GeneC=3.1  ...  第494个基因=2.8
+  └───────────── 494 个数字 ─────────────┘
+                     ↓  压缩
+                  ME = 6.63        ← 1 个数字
+```
+
+**严格说，ME 是模块所有基因的第一主成分「得分」**——每个细胞一个投影值，而不是第一主成分本身（那是每个基因一个权重）。eigengene 直译「特征基因」，相当于虚构一个基因，它在每个细胞里的表达值就等于整个模块的综合水平。
+
+**类比**：细胞 = 学生，模块里的基因 = 这个学生的各门课成绩，ME = 「综合能力分」。494 门课没法直接比谁强，算个综合分就比得了。
+
+**用 4 个基因的小例子实算一遍**（真实计算，非示意）：
+
+原始表达矩阵（行=基因，列=细胞），4 个基因同涨同落：
+
+```
+          c1    c2    c3    c4    c5
+GeneA    5.2   0.1   4.8   0.3   5.5
+GeneB    4.9   0.2   5.1   0.4   5.2
+GeneC    3.1   0.1   2.9   0.2   3.3
+GeneD    2.2   0.1   2.1   0.1   2.4
+```
+
+第一步，给每个基因一个「权重」（由主成分分析从数据里学出来，全为正 = 朝同一方向变化）：
+
+```
+GeneA  +0.639    GeneB  +0.611    GeneC  +0.379    GeneD  +0.274
+```
+
+第二步，每个细胞算出 1 个数：
+
+```
+c1   +3.025
+c2   -4.816
+c3   +2.789
+c4   -4.528
+c5   +3.531
+```
+
+**这 5 个数就是 5 个细胞的 ME。** c2 最负、c1 最正，正对应「c2 的 4 个基因都很低、c1 都很高」。
+
+第三步，验证它确实代表了原来那 4 个基因：
+
+```
+ME 与 GeneA 的相关性  r = +0.999
+ME 与 GeneB 的相关性  r = +0.999
+ME 与 GeneC 的相关性  r = +1.000
+ME 与 GeneD 的相关性  r = +0.999
+第一主成分解释的方差 = 99.8%
+```
+
+**一个数值，和原来 4 个基因的相关系数全在 0.999 以上**——信息基本没丢。「压缩」不是丢信息，而是抓住它们共同的那一个趋势。
+
+**为什么用主成分而不是直接取平均**：模块里若混进一个噪声基因（表达忽高忽低），简单平均会被它拖偏。主成分的权重**从数据里学**——与整体趋势一致的基因权重高，不稳定的基因权重被压到很低甚至为 0，所以更稳健。
+
+**导出后的样子**：`MEs.csv` 每行一个细胞、每列一个模块（含 grey），**每个格子一个 ME**——每一列都是由该模块的全部基因压缩来的一个数。
+
+#### 8. hME：为什么还要再校正一次
+
+模块之间会互相「串味」。比如 `NEW_1` 和 `NEW_2` 的基因有重叠，那 `NEW_1` 的 ME 里就混进了 `NEW_2` 的信号——你看到 `NEW_1` 高，可能其实是被 `NEW_2` 带上去的。
+
+**hME 的解法**：把其它模块的影响回归掉，只留这个模块独有的部分。所以 **hME 才能跨模块直接比较**（「`NEW_1` 和 `NEW_3` 哪个更活跃」这种问题必须用 hME）。
+
+`MEs.csv` 与 `hMEs.csv` 行列结构完全相同（同样的细胞、同样的模块），只是数值不同。
+
+拿同一个细胞对照两张表会发现：**方向一致、hME 的绝对值略小**。这是因为 hME 去掉了从其它模块「借来」的那部分信号，所以更保守。做跨模块比较、或想排除模块间串扰时，用 hME。
+
+#### 9. 三个必须记住的边界
+
+1. **模块 ≠ 通路**：模块是数据驱动的共表达群，可能对应一条通路，也可能只是「一组高表达基因」或技术因素造成的。必须拿基因列表去做富集才知道它是什么。
+2. **hub ≠ 功能最重要**：hub 只是网络里连接最多，不代表功能上最关键。要结合 `gene_DE` 的差异倍数和富集结果判断。
+3. **ME / hME 只能比相对高低**：绝对值没有意义（不同模块尺度不同、正负号是算法任意定的）。可以说「这个细胞的 hME 比那个细胞高」，不能说「hME = 6.63 代表活性 6.63」。
+
+### 输入
+
+一个 **Seurat rds 对象**，且必须满足：
+
+| 要求 | 原因 |
+|---|---|
+| 已注释（有细胞类型列，由 `-AC` 指定）| 脚本按细胞类型筛选目标群体 |
+| 有样本列（由 `-SC` 指定）| metacell 按「细胞类型 × 样本」分组构建 |
+| **有 `harmony` 降维**（`seu@reductions$harmony`）| metacell 构建时 `reduction = "harmony"` 硬编码，缺了直接失败 |
+| 已归一化 | 脚本会再跑一次 `NormalizeData(LogNormalize)` |
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| Seurat rds 路径 |
+| `-AC, --annotation_column` | 无（必填）| 细胞类型所在的 `meta.data` 列名 |
+| `-SC, --sample_column` | 无（必填）| 样本所在的 `meta.data` 列名 |
+| `-TC, --target_cell` | 无（必填）| **目标细胞类型名**（`-AC` 列里的一个取值）|
+| `-SP, --soft_power` | **3** | WGCNA 软阈值。**先看 `softPowers.png` 再定**，见注意事项 |
+| `-A, --assay` | RNA | 用哪个 assay 的表达矩阵 |
+| `-T, --threads` | 8 | WGCNA 线程数 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录（不存在会自动创建）|
+
+### 用法示例
+
+```bash
+# 第一步：先用默认 soft power 跑一遍，重点看 softPowers.png
+./scRNA_hdWGCNA.r -I 05.seu_annotated.rds -AC celltype -SC orig.ident \
+    -TC 'CellTypeA' -A RNA -SP 3 -T 8 -P 01. -O 13_hdWGCNA
+
+# 第二步：根据 softPowers.png 重新指定 power（图会覆盖，但 TOM 会重算）
+./scRNA_hdWGCNA.r -I 05.seu_annotated.rds -AC celltype -SC orig.ident \
+    -TC 'CellTypeA' -A RNA -SP 6 -T 8 -P 01. -O 13_hdWGCNA
+```
+
+**如果要分析多个细胞类型，就换 `-TC` 跑多次**，每次给不同的 `-P` 前缀，避免产物互相覆盖。
+
+### 输出
+
+**图（每张都出 PNG + PDF）**
+
+| 文件 | 内容 |
+|---|---|
+| `<前缀>metacell_<细胞类型列名>umap.png` | metacell 按细胞类型着色的 UMAP（检查 metacell 是否保留了细胞类型的结构）|
+| `<前缀>metacell_<样本列名>umap.png` | metacell 按样本着色的 UMAP（检查有没有残留样本批次效应）|
+| `<前缀>softPowers.png` | **软阈值诊断图**：4 个面板分别是 scale-free topology fit、mean / median / max connectivity 对 power 的曲线，黑圈标出脚本选用的 power |
+| `<前缀>Dendrogram.png` | **基因聚类树 + 模块颜色条**：树的分支是基因间的距离，底部色条是模块归属（灰色 = 未分入模块）|
+| `<前缀>plotKMEs.png` | 各模块内基因的 kME 排序（找 hub 用）|
+| `<前缀>cell_module.png` | 每个模块的 hME 打分投到 UMAP 上（看模块在哪些细胞里活跃）|
+| `<前缀>cell_hubGenes.png` | 每个模块的 **hub 基因打分**（UCell）投到 UMAP 上 |
+| `<前缀><目标细胞>_radar.png` | 雷达图：各模块 hME 按样本比较，一眼看出哪个样本哪个模块高 |
+| `<前缀>module_correlation.png` | 模块之间的相关性（模块特征值两两相关）|
+| `<前缀>module_celltype_dotplot.png` | 细胞类型 × 模块的 dotplot（hME 均值），看模块的细胞类型特异性 |
+
+**表**
+
+| 文件 | 内容 |
+|---|---|
+| `<前缀>gene_modules.csv` | **基因 → 模块**归属表（已剔除 grey 模块），含 kME、module、color 等列 |
+| `<前缀>top10_hubgenes.csv` | 每个模块 kME 前 10 的 hub 基因 |
+| `<前缀>MEs.csv` | 细胞 × 模块的**原始**特征值 |
+| `<前缀>hMEs.csv` | 细胞 × 模块的**校正后**特征值（跨模块可比）|
+
+**对象与中间文件**
+
+| 文件 | 内容 |
+|---|---|
+| `<前缀>seu_hdWGCNA.rds` | **最终 Seurat 对象**，所有 hdWGCNA 结果都在里面（模块、kME、hMEs、metacell 等）|
+| `<outpath>/TOM/<目标细胞>_TOM/` | TOM 中间文件（`*_TOM.rda`），**体积大**；后续重跑同参数会复用，`overwrite_tom=TRUE` 时重算 |
+
+示例输出：`Images/hdWGCNA/`。
+
+### 结果图怎么读
+
+十张图分两类：**前 4 张是「质检图」，用来判断这次运行的结果可不可信；后 6 张是「结果图」，用来回答生物学问题。**
+质检图不对，后面的结果就不用看了——所以必须按顺序读。
+
+| # | 图 | 类别 | 作用 | 怎么读 |
+|---|---|---|---|---|
+| 1 | `metacell_<AC值>umap.png` | 质检 | metacell 是否保留了细胞类型结构 | 各细胞类型仍能分开 = 正常 |
+| 2 | `metacell_<SC值>umap.png` | 质检 | metacell 有无残留样本批次效应 | 各样本充分混合 = 正常 |
+| 3 | `softPowers.png` | 质检 | 软阈值 β 选得对不对 | 看 R² 第一个越过 0.8 的点 |
+| 4 | `Dendrogram.png` | 质检 | 模块切得合不合理 | 分支清晰、grey 占比不过大 |
+| 5 | `plotKMEs.png` | 结果 | 每个模块里 hub 的位置 | 顶部有明显「断崖」= 模块内聚性好 |
+| 6 | `module_celltype_dotplot.png` | 结果 | 模块的细胞类型特异性 | 目标细胞类型的那一行整体偏红 = 模块属于它 |
+| 7 | `cell_module.png` | 结果 | 模块活性在细胞间的分布 | 连续渐变 = 状态过渡；突然点亮 = 离散亚群 |
+| 8 | `cell_hubGenes.png` | 结果 | 只用 hub 基因算的活性 | 与第 7 张形状一致 = 模块信号确实来自 hub |
+| 9 | `module_correlation.png` | 结果 | 模块之间的协同/互斥 | 强正相关 = 同一程序的两个片段 |
+| 10 | `<目标细胞>_radar.png` | 结果 | 模块活性在样本间的差异 | 某个样本某个模块明显凸出 = 候选生物学差异 |
+
+#### 质检图（先看这 4 张，不对就别往下看）
+
+**① `metacell_<AC值>umap.png` —— metacell 按细胞类型着色**
+
+横竖轴是 metacell 的 UMAP 坐标，每个点是一个 metacell，颜色是细胞类型。
+
+- **正常**：不同细胞类型仍各自成团、彼此分开
+- **异常**：所有类型混成一坨 → metacell 把类型差异也平均掉了，后面找出来的模块没有意义（多半是 `k` 太大或 `-TC` 选错了）
+
+**② `metacell_<SC值>umap.png` —— metacell 按样本着色**
+
+同一批 metacell，改按样本上色。
+
+- **正常**：各样本颜色均匀混杂
+- **异常**：样本各自成团 → 残留批次效应。这时找出的模块可能反映的是「样本差异」而不是生物学程序（回去检查 `scRNA_Nor_harmony_step3.r` 的整合结果）
+
+**这两张必须一起看**：类型分开 + 样本混匀 = metacell 建对了。这是整个流程的地基。
+
+**③ `softPowers.png` —— 软阈值诊断（4 个面板）**
+
+| 面板 | 内容 |
+|---|---|
+| 左上 **scale free topology fit** | 横轴 β、纵轴 R²。**这是唯一需要看的** |
+| 另三张 | mean / median / max connectivity 随 β 的变化（辅助参考）|
+
+- 图中有一条 **0.8 的灰色虚线**
+- 黑圈标出脚本当前用的 `-SP`
+- **正确做法**：找**第一个让 R² 越过 0.8** 的 β，用那个值
+
+| 现象 | 含义 | 后果 |
+|---|---|---|
+| β 太小 | 弱相关全被保留 | 网络过密、模块糊在一起、模块数偏少但每个都很大 |
+| β 太大 | 只剩极强相关 | 模块碎成很多小块、大量基因掉进 grey |
+| R² 一直上不去 0.8 | 数据本身不满足无标度假设 | 常见于细胞数太少或异质性太强，结论要谨慎 |
+
+**④ `Dendrogram.png` —— 基因聚类树 + 模块颜色条**
+
+上半部分是基因的层次聚类树（纵轴是基因间距离 = 1 − TOM），下半部分是色条，每段颜色对应一个模块。
+
+- **正常**：树枝在高层分成几个清晰的簇，色条与树枝的簇大体对齐
+- **grey 占比过大**（灰色段特别长）→ 说明大量基因没被分进任何模块，可能是 β 太大或数据噪声太高
+- grey 段往往占色条的很大一部分，这是常见现象；注意**只有非 grey 基因才进入下游分析**
+
+#### 结果图（按 5 → 10 的顺序读）
+
+**⑤ `plotKMEs.png` —— 每个模块内基因按 kME 排序**
+
+每个面板是一个模块，横轴是模块内基因的排名，纵轴是 kME。
+
+- **看曲线顶部的形状**：最高处与后面明显拉开（一个「断崖」），说明这个模块有明确的 hub、内聚性好
+- **曲线整体平缓**：说明模块内没有特别突出的基因，模块可能只是「一群差不多相关的基因」拼起来的
+- 一个模块**同时有好几个并列最高**（不是单一峰）→ 可能实际上是两个程序被合并了
+
+**⑥ `module_celltype_dotplot.png` —— 细胞类型 × 模块**
+
+行 = 细胞类型，列 = 模块，颜色 = hME 均值（红高蓝低），点大小 = 表达比例。
+
+- **这是判断「模块归谁」的主要依据**
+- **正常**：每个模块在某一两类细胞里明显偏红（模块有细胞类型特异性）
+- **异常**：所有模块在所有细胞类型上都是浅色 → 模块没有特异性，可能只是反映了「测序深度」或「细胞大小」这类技术因素
+- **重点看 `-TC` 那一行**：这一行里哪些列偏红，就是属于这个细胞类型的模块，优先拿去做富集
+
+**⑦ `cell_module.png` —— 每个模块的 hME 投到细胞 UMAP 上**
+
+每个面板一个模块，颜色 = hME。**注意：这里的点是原来的细胞，不是 metacell。**
+
+- **连续渐变**（从一块区域平滑过渡到另一块）→ 这个模块活性随某种状态连续变化，可能对应分化或代谢梯度
+- **突然点亮**（某群细胞整块亮、周围暗）→ 这个模块是某个亚群特有的，跟一个离散的细胞状态对应
+- **到处都亮** → 模块不特异，回去看第 6 张图确认
+
+**⑧ `cell_hubGenes.png` —— 只用 hub 基因算的活性**
+
+和第 7 张形状一样，但数值来自**每个模块 kME 前 25 个基因**（UCell 打分），而不是整个模块。
+
+- **用途是验证**：如果第 7 张和第 8 张形状基本一致，说明**模块的信号确实集中在 hub 基因上**，hub 的选择可信
+- **两者形状差别很大** → 模块的活性不是由少数 hub 驱动的，而是由一大批边缘基因撑着。这种情况下 hub 基因的生物学意义要打折扣
+
+**⑨ `module_correlation.png` —— 模块之间的相关性**
+
+模块特征值两两相关的热图。
+
+- **强正相关**（深红）→ 两个模块很可能属于**同一个生物学程序的不同片段**，被算法切成了两块。可以合并起来一起做富集
+- **强负相关**（深蓝）→ 两个程序此消彼长，常见于「分化前状态 vs 分化后状态」
+- **接近 0**（浅色）→ 两个模块独立，是两条不相关的过程
+
+**⑩ `<目标细胞>_radar.png` —— 模块活性的样本比较**
+
+雷达图，每个轴是一个模块，每条线是一个样本，半径是该样本里目标细胞的 hME 均值。
+
+- **用途**：看模块活性在样本（或分组）之间有没有差别
+- **某个样本在某个轴上明显凸出** → 那个样本里这个模块特别活跃，是候选的生物学差异
+- ⚠️ **这只是可视化，没有统计检验**。要下结论必须用 `hMEs.csv` 自己做检验（而且要以样本为单位，不能以细胞为单位，否则是伪重复）
+
+#### 一句话读图顺序
+
+```
+【先质检，任何一张不对就停下】
+1. metacell_<AC>umap.png       → 细胞类型还分得开吗？
+2. metacell_<SC>umap.png       → 样本混匀了吗？
+3. softPowers.png              → β 是否是第一个 R²>0.8 的点？
+4. Dendrogram.png              → 模块切得干净吗？grey 是否过多？
+
+【再看结果】
+5. plotKMEs.png                → 每个模块有明确 hub 吗？
+6. module_celltype_dotplot.png → 模块归哪个细胞类型（重点看 -TC 那一行）
+7. cell_module.png             → 模块活性是连续渐变还是突然点亮
+8. cell_hubGenes.png           → 与第 7 张对照，验证信号来自 hub
+9. module_correlation.png      → 哪些模块是同一程序的两半
+10. <目标细胞>_radar.png       → 样本间有无差异（仅可视化，需另外检验）
+```
+
+#### 常见异常信号对照
+
+| 看到什么 | 大概率原因 | 怎么处理 |
+|---|---|---|
+| 第 1 张图细胞类型混成一坨 | `k` 太大，或 `-TC` 选错 | 减小 `k`（需改代码，硬编码 25）|
+| 第 2 张图样本各自成团 | 上游去批次不充分 | 回 `scRNA_Nor_harmony_step3.r` 检查整合 |
+| 第 3 张图 R² 始终到不了 0.8 | 数据细胞数太少 / 异质性过高 | 结论降级为探索性 |
+| 第 4 张图 grey 占一大半 | β 太大，或基因过滤太宽松 | 调小 `-SP`；或提高 `fraction`（硬编码 0.05）|
+| 模块数只有 2–3 个且都很大 | β 太小，网络过密 | 调大 `-SP` |
+| 第 6 张图全是浅色 | 模块反映技术因素 | 检查是否该做 `regress_out`；结论谨慎 |
+| 第 7、8 张形状不一致 | hub 不具代表性 | 不要单凭 hub 基因下结论 |
+
+
+### 注意事项
+
+- **输入对象必须有 `harmony` 降维**：第 156 行 `reduction = "harmony"` 是硬编码的，没有这个 reduction 会在构建 metacell 时直接失败。本库主流程 `scRNA_Nor_harmony_step3.r` 的产物就带 `harmony`，可以直接用。
+- **`-TC` 只接受一个细胞类型**，且必须是 `-AC` 列里真实存在的取值。脚本不会自动校验，写错会在 `SetDatExpr` 处报「群组不存在」。
+- **soft power 必须先看图**：默认 `3` 只是这份测试数据的值。正确做法是跑到 `softPowers.png` 后，找**scale-free topology fit 第一个越过 0.8（图中虚线）**的 power，再回填 `-SP`。power 太小 → 网络过于稠密、模块糊成一团；太大 → 模块全碎、只剩 grey。
+- **目标细胞类型在每个样本里至少要 100 个细胞**（`min_cells = 100` 硬编码）。细胞数不足的样本会被跳过；如果所有样本都不足，metacell 建不起来会报错。稀有细胞类型不适合做这个分析。
+- **metacell 的两张 UMAP 分别按 `-AC` 和 `-SC` 着色**，文件名也用对应的列名：`metacell_<AC值>umap.png` 按细胞类型着色（看 metacell 是否保留类型结构），`metacell_<SC值>umap.png` 按样本着色（看有没有残留批次效应）。两张图对照着看：类型分得开、样本混得匀，说明 metacell 建得合适。
+- **雷达图只画 `-TC` 那一个细胞类型**：脚本按 `-AC` 列筛出该类型的细胞再画，所以 `-AC` 与 `-TC` 必须指向同一套注释。
+- **几个关键数值写死在代码里，没有对应参数**：`fraction = 0.05`（基因需在 ≥5% 的 metacell 中表达）、`k = 25`（每个 metacell 由 25 个细胞合成）、`max_shared = 10`、`min_cells = 100`、`n_genes = 25`（给细胞打模块分时，每个模块取 kME 前 25 个基因）。想改只能改代码。
+- **⚠️ 脚本里有两个「25」，含义完全不同，别混**：
+  - 第 157 行 `k = 25` —— **metacell 粒度**：每 25 个邻近细胞平均成 1 个伪细胞（影响降噪程度与网络构建）
+  - 第 259 行 `n_genes = 25` —— **hub 打分粒度**：给每个细胞算模块分时，只用该模块 kME 最高的 25 个基因（决定 `cell_hubGenes.png`）
+  
+  两者改动的后果互不相干：改 `k` 会改变 metacell、进而改变整个网络与模块划分；改 `n_genes` **只影响 hub 打分这一路结果**（`cell_hubGenes.png` 和对象里存的 score），不改变模块划分，也不改变 `MEs` / `hMEs`（后者由 `ModuleEigengenes` 用整个模块算出）。
+- **`plotKMEs.png` 方框里标的是 kME 前 10 个基因**（不是 25），这是绘图函数的内部设定，与上面的 `n_genes` 无关。
+- **会重新做一次归一化**：第 142 行 `NormalizeData(...)`，所以输入对象即使是归一化过的也会再归一化一遍（重复 log 化会改变尺度）。若输入已是 log 归一化数据，建议先确认这一步是否符合预期。
+- **`seu_hdWGCNA.rds` 会很大**：metacell 对象与全部模块信息都塞在里面，体积随细胞数增长，可能达到 GB 级；`TOM/` 目录同样很大。磁盘要留够。
+- **`overwrite_tom = TRUE`**：每次重跑都会重算 TOM，换 `-SP` 时这是必要的；但如果只是想重画图，会白等一次 TOM 计算。
+- **第 294 行的日志信息写错了**：实际保存的是 `cell_hubGenes.png`，但打印的提示是 `cell_module.png`。不影响产物，只是日志会误导。
+- **radar 图依赖 `ggradar`，hub 基因打分依赖 `UCell`**：两个包缺失时脚本会尝试 `install.packages`，离线环境会失败。
+- **模块颜色会重命名**：脚本用 `ResetModuleNames(new_name = "<目标细胞>_NEW_")` 把模块改成 `<细胞类型>_NEW_<颜色>`，所以 `gene_modules.csv` 里的模块名和 `Dendrogram.png` 里的颜色不是同一套写法，对照时注意。
+- **hub 基因只是「模块内连接度最高」**，不等于功能最重要；要结合 `gene_DE` / 富集结果看。
+
+
+---
+
+## 30 scRNA_scTenifoldKnk.r（独立脚本）—— 单细胞虚拟基因敲除（scTenifoldKnk）
+
+### 功能
+
+**在计算机里把某个基因「敲掉」，预测哪些基因会跟着受影响——不需要做真实的敲除实验。**
+
+回答三个问题：
+
+1. **敲掉目标基因，哪些基因的调控关系会明显改变？**（`diffRegulation` 表）
+2. **这些基因富集在哪些通路上？**（`KO_effect_plot` 的网络节点配色与图例）
+3. **受影响最强的基因是哪些？**（FC 排序 top20）
+
+**与其它脚本的分工**：
+
+| 脚本 | 回答什么 | 需要什么 |
+|---|---|---|
+| `scRNA_pseudobulk_DE.r` | 两组真实样本之间哪些基因表达变了 | 有分组的多组样本 |
+| `scRNA_hdWGCNA.r` | 某细胞类型里基因分成哪些共表达模块 | 单一细胞类型、足够细胞数 |
+| **`scRNA_scTenifoldKnk.r`** | **如果拿掉这个基因，网络会怎么变** | **一份表达矩阵 + 一个目标基因** |
+
+**最大的特点：不需要敲除组数据。** 只有野生型（WT）单细胞数据也能做，靠的是从数据里重建调控网络，再在网络上做「虚拟敲除」，比较敲除前后的网络差异。适合**没有条件做基因敲除、但想知道某个基因影响力**的场景。
+
+### 核心概念
+
+#### 虚拟敲除（in silico knockout）是什么
+
+不是改数据，而是**改网络**：
+
+```
+① 用 WT 单细胞数据重建基因调控网络      → WT 网络
+② 把目标基因在网络里的所有连接置零        → KO 网络（这就是「敲除」）
+③ 比较两个网络的差异                      → 哪些基因受影响
+```
+
+所以它测的是「**这个基因在网络拓扑上有多重要**」，不是「表达量会变多少」。
+
+#### 为什么要建 10 个子网络（`nc_nNet`）
+
+单细胞网络噪声大，一次建网不可靠。做法是**随机抽若干细胞建多个子网络**，再做张量分解把共同结构提出来、压掉噪声。
+
+- `nc_nNet = 10`：建 10 个子网络
+- `nc_nCells = 500`：每个子网络随机抽 500 个细胞
+
+**这 10 个子网络还有第二个用途**：既当噪声平滑，又当**重复**——用它们之间的离散程度估计 Z 值和 p 值（相当于做了 10 次重复的置换检验）。所以子网络数不能太少。
+
+#### 输出表里四列的含义
+
+| 列 | 含义 |
+|---|---|
+| `gene` | 被检验的基因 |
+| `distance` | WT 网络与 KO 网络之间这个基因的**流形距离**——距离越大，说明敲除后这个基因在网络里的位置变化越大 |
+| `Z` | 该距离相对 10 个子网络间波动的**标准化偏离程度**。Z 越大越显著 |
+| `FC` | 敲除前后距离的**变化倍数**，脚本按它排序取 top20 |
+| `p.value` / `p.adj` | 由子网络间的分布算出的显著性，`p.adj` 是校正后（脚本按 `p.adj` 判显著）|
+
+**注意这张表的逻辑和常规 DE 表完全不同**：DE 表比的是「两组表达量」，这里比的是「**网络拓扑**」。所以**一个基因完全可以表达量不变、但被判定为显著受影响**。
+
+### 输入
+
+一个 **Seurat rds 对象**，脚本会自己取两样东西：
+
+| 取什么 | 从哪取 | 用途 |
+|---|---|---|
+| **counts 矩阵** | `GetAssayData(seu, layer = "counts")` | **必须是原始 counts**，不能是归一化数据 |
+| **HVG 列表** | `VariableFeatures(seu)` | 只取高变基因 + 目标基因参与建网 |
+
+**前提**：对象的 `VariableFeatures` 必须已经算过（跑过 `FindVariableFeatures`，即主流程 step4 之后的产物）。
+
+脚本会自动把目标基因加入 HVG 列表（`unique(c(target_gene, HVGs))`），并**先校验目标基因是否在 counts 矩阵里**，不在则直接报错退出。
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| Seurat rds 路径 |
+| `-TG, --target_gene` | 无（必填）| **要敲除的基因名**，必须在 counts 矩阵里 |
+| `-T, --threads` | 8 | 并行线程数 |
+| `-p_val` | 0.05 | **`p.adj` 阈值**，判定「显著受影响基因」 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+
+### 用法示例
+
+```bash
+# 单基因敲除
+./scRNA_scTenifoldKnk.r -I 05.seu_annotated.rds -TG GeneX \
+    -T 8 -p_val 0.05 -P 01. -O 14_scTenifoldKnk
+
+# 多个基因要敲除，就换 -TG 跑多次（每次都换前缀，避免覆盖）
+./scRNA_scTenifoldKnk.r -I 05.seu_annotated.rds -TG GeneY \
+    -T 8 -p_val 0.05 -P 02. -O 14_scTenifoldKnk
+```
+
+**耗时**：建 10 个子网络 + 张量分解，通常是分钟到十几分钟级别，取决于细胞数和基因数（HVG 数量直接决定网络维度）。
+
+### 输出
+
+**表**
+
+| 文件 | 内容 |
+|---|---|
+| `<前缀>diffRegulation_raw.csv` | **全部被检验基因**的结果表（`gene, distance, Z, FC, p.value, p.adj`）。**包含目标基因本身**（其 p 值为 0）|
+| `<前缀>diffRegulation_sig.csv` | 只保留 `p.adj < -p_val` 的基因，**已剔除目标基因** |
+| `<前缀>scTenifoldKnk_result.rds` | **完整分析结果对象**（`scTenifoldKnk()` 的返回值），可用来换 `q` 值重画网络图而不必重跑 |
+
+**图（每张都出 PNG + PDF）**
+
+| 文件 | 内容 |
+|---|---|
+| `<前缀>KO_effect_plot.png` | **敲除效应网络图**：中心是目标基因，向外连到受影响的基因；边的颜色区分正/负影响；节点颜色代表基因所属的富集通路，图例给出通路名与 FDR |
+| `<前缀>diff_genes_barplot.png` | 按 `FC` 排序的 **top20 受影响基因**横向条形图 |
+| `<前缀>Z_logp_scatter.png` | **Z 值 vs −log10(p.adj) 散点图**，标注高 Z 且显著的基因 |
+| `<前缀>pie.png` | 显著 vs 不显著基因的**占比饼图** |
+
+示例输出：`Images/scTenifoldKnk/`。
+
+### 结果图怎么读
+
+四张图分工不同，建议按 **① 饼图 → ② 效应网络 → ③ 条形图 → ④ 散点图** 的顺序看。
+
+| # | 图 | 作用 | 怎么读 |
+|---|---|---|---|
+| 1 | `pie.png` | 先看「这次敲除到底有没有效果」 | 红色（显著）扇区**很窄 = 影响面小**，说明这个基因在网络里比较边缘；只有极少甚至 0 个显著基因时脚本会直接报错退出 |
+| 2 | `KO_effect_plot.png` | **最重要的一张**，看「影响了谁、走的什么通路」 | 中心大圈 = 目标基因；放射到外圈 = 受影响基因。**节点颜色 = 该基因所属的富集通路**，一个节点有多种颜色说明它同时属于多条通路；图例里每条通路带 FDR |
+| 3 | `diff_genes_barplot.png` | 看「影响最强的 20 个基因」 | 横轴 FC，越长受影响越强。**注意这是网络距离的变化倍数，不是表达量的 fold change** |
+| 4 | `Z_logp_scatter.png` | 看整体分布与离群点 | 横轴 Z、纵轴 −log10(p.adj)；**蓝色竖虚线标 Z=2**，红色横虚线标 p 阈值。右下角弯上去的那条「弧」是绝大多数基因（Z 小、不显著）；真正值得注意的只有**越过两条线的点**，图上会标出基因名 |
+
+**读 `KO_effect_plot` 的三个要点**：
+
+1. **看中心基因连出去多少条边**——边多说明这个基因在网络里是枢纽，敲掉它影响面大
+2. **看边的颜色**——红蓝分别代表敲除后上调/下调关联（脚本用 `plotKO(q = 0.99)` 只画最强的那些边，所以图上不是全部连接）
+3. **看节点上的通路配色**——如果一个基因同时挂在多条通路颜色上（饼状节点），说明它被多条受影响通路共享，往往是关键的「交叉点」
+
+### 注意事项
+
+- **必须用原始 counts**：脚本取的是 `layer = "counts"`。如果对象里没有 counts 层（比如只保留了归一化数据），会直接失败。主流程 `scRNA_QC_step1.r` / `scRNA_Nor_harmony_step3.r` 的产物都带 counts。
+- **必须先算过 HVG**：脚本用 `VariableFeatures(seu)` 选基因，没跑过 `FindVariableFeatures` 会得到空列表，只剩目标基因一个基因建网，结果无意义。
+- **一次只能敲一个基因**：`-TG` 只接受单个基因名。多个基因要跑多次，且**每次换 `-P` 前缀**，否则产物会互相覆盖。
+- **目标基因自身不出现在 `diffRegulation_sig.csv` 里**：原始表保留它（p 值恒为 0，因为是它自己），但下游分析前脚本会把它剔除。
+- **没有显著基因时脚本会终止**：若 `p.adj < -p_val` 的基因数为 0，脚本 `stop()` 退出，连图都不会生成。遇到这种情况多半是这个基因在网络里太边缘，或 `-p_val` 设得太严。
+- **`-p_val` 是「校正后 p 值」的阈值**，不是原始 p 值。
+- **`Z_logp_scatter` 的标注条件跟随 `-p_val`**：图上标注的是 `abs(Z) > 2` 且 `p.adj < -p_val` 的基因，与红色横虚线（同一条阈值）完全一致，不会出现「标注点落在红线下方」的矛盾。
+- **几个关键参数写死在代码里**：`nc_nNet = 10`（子网络数）、`nc_nCells = 500`（每网络细胞数）、`qc_mtThreshold = 0.1`（线粒体比例上限）、`qc_minLSize = 300`（每个细胞最少检出基因数）、`plotKO(q = 0.99)`（只画最强 99% 分位的边）。想改只能改代码。
+- **细胞数不能太少**：每个子网络要抽 `nc_nCells = 500` 个细胞，`qc` 还会先过滤掉线粒体高、检出基因少的细胞。**细胞数不足 500（过滤后）时抽样会耗尽**，脚本可能报错或结果不稳。细胞类型特异的分析建议先把目标细胞类型单独 subset 出来再跑。
+- **`plotKO` 会联网做富集**：脚本启动时设了 `setEnrichrSite("https://maayanlab.cloud/Enrichr")`，网络不通时这一步会失败或返回空富集。离线环境要提前考虑。
+- **完整结果另存为 rds**：`<前缀>scTenifoldKnk_result.rds` 保存了 `scTenifoldKnk()` 的完整返回对象。想换 `plotKO()` 的 `q` 值重画网络图时，`readRDS` 后直接重画即可，不用再跑一遍十几分钟的分析。
+- **`as.data.frame()` 会把矩阵稠密化**：第 119 行把稀疏 counts 转成 data.frame，基因数（HVG）越多内存占用越大。全库 2000 个 HVG 量级一般可接受。
+- **FC 不是表达量倍数**：它是网络距离的变化倍数，数值可以很大（成百上千），**不要和 DE 的 log2FC 混着解释**。
+
+
+---
+
+## Scanpy 路线
+
+本库有**两条并列的分析路线**：
+
+| | Seurat 路线（第 1–28 章）| **Scanpy 路线（本章）** |
+|---|---|---|
+| 语言 | R | Python |
+| 中间产物 | `.rds`（Seurat 对象）| `.h5ad`（AnnData 对象）|
+| 脚本位置 | 库根目录 | **`scanpy/` 子目录** |
+| 主流程 | `scRNA_QC_step1.r` → `dedoublets_step2.r` → `Nor_harmony_step3.r` → `clustering_step4.r` → `annotate_step5.r` | `scRNA_pipeline_scanpy.py`（一步做完 QC + 整合 + 聚类 + marker）→ `scRNA_annotate_scanpy.py` |
+
+**两条路线产物格式不同，不能混用**：Seurat 路线的脚本读 rds，Scanpy 路线的脚本读 h5ad。需要跨路线时用 `scRNA_h5ad2rds.r` / `scRNA_h5ad_seurat_convert.r` 转换。
+
+**本章脚本位于 `scanpy/` 子目录**，调用时路径要带上目录名：
+
+```bash
+./scanpy/scRNA_pipeline_scanpy.py -I raw.h5ad ...
+```
+
+### 路线总览
+
+| 顺序 | 脚本 | 作用 | 输入 → 输出 |
+|---|---|---|---|
+| ① | `scRNA_pipeline_scanpy.py` | 质控、去双细胞、归一化、整合、聚类、找 marker（CPU）| h5ad → `preprocessed.h5ad` |
+| ② | `scRNA_annotate_scanpy.py` | 画 marker dotplot、把 cluster 映射成细胞类型 | `preprocessed.h5ad` → `annotated.h5ad` |
+| ③ | `scRNA_DE_scanpy.py` | 差异表达分析（Wilcoxon / t-test / logreg）+ 出图 | h5ad → `DE_analyzed.h5ad` |
+| ④ | `scRNA_pipeline_scanpy_GPU.py` | ① 的 GPU 加速版（rapids-singlecell）| 同 ① |
+
+①②③ 是**顺序依赖**的：① 的产物喂给 ②，② 的产物喂给 ③。④ 是 ① 的替代实现，**只跑其中之一**。
+
+### 与 Seurat 主线的步骤对照
+
+| Seurat 路线 | Scanpy 路线 | 说明 |
+|---|---|---|
+| `scRNA_QC_step1.r` | pipeline 的 Step 1–2 | 质控过滤 |
+| `scRNA_dedoublets_step2.r` | pipeline 的 Step 3 | 去双细胞（scDblFinder ↔ **Scrublet**）|
+| `scRNA_Nor_harmony_step3.r` | pipeline 的 Step 4–8 | 归一化 + HVG + PCA + Harmony |
+| `scRNA_clustering_step4.r` | pipeline 的 Step 9–12 | 邻接图 + **Leiden** + UMAP + marker |
+| `scRNA_annotate_step5.r` | `scRNA_annotate_scanpy.py` | 细胞类型注释 |
+
+**区别**：Seurat 路线拆成 5 个 stepN 脚本、每步产物落盘可单独重跑；Scanpy 路线把前四步**合并在一个 pipeline 脚本**里，只有一个中间产物 `preprocessed.h5ad`。
+
+### 环境与依赖
+
+Scanpy 路线统一用 `scanpy` 环境。**四个脚本的 shebang 保持各自原样**：`scRNA_pipeline_scanpy.py` 与 `scRNA_pipeline_scanpy_GPU.py` 用 `#!/usr/bin/env python`（依赖 `PATH` 上有对应解释器），`scRNA_annotate_scanpy.py` 与 `scRNA_DE_scanpy.py` 用绝对路径 `/oldhome/ouyjh/miniforge3/envs/scanpy/bin/python`。用 env 写法的两个脚本若直接 `./` 执行报解释器不对，显式调用即可：
+
+```bash
+/oldhome/ouyjh/miniforge3/envs/scanpy/bin/python scanpy/scRNA_pipeline_scanpy.py -I raw.h5ad ...
+```
+
+核心依赖：`scanpy`、`anndata`、`pandas`、`numpy`、`matplotlib`、`harmonypy`（Harmony）、`igraph`（Leiden 用 `flavor='igraph'`，因此**不需要** `leidenalg`）。
+
+额外注意：
+- **Scrublet 步骤**（Step 3）依赖 `scrublet` 包。该包缺失时 pipeline 会在这一步失败——如果不需要去双细胞，只能自行注释掉这一步或先装包。
+- **GPU 版**额外需要 `cupy` + `rapids-singlecell` + **CUDA 显卡**；三者缺一不可，纯 CPU 环境请用 CPU 版。
+
+---
+
+### 一、scRNA_pipeline_scanpy.py —— 质控、整合与聚类（CPU）
+
+#### 功能
+
+**一条命令走完单细胞数据的前四步预处理**：质控 → 去双细胞 → 归一化 → 高变基因 → 标准化 → PCA → Harmony 去批次 → 邻接图 → Leiden 聚类 → UMAP → 找 marker，最后存成 `preprocessed.h5ad` 供下游注释使用。
+
+对应 Seurat 路线的 `step1`–`step4`。
+
+#### 输入
+
+一个 **h5ad 文件**（AnnData）。`adata.X` 应为原始 counts（整数）；`adata.obs` 若含批次列可交给 `-BK` 用于去批次与分步去双细胞。
+
+#### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| 输入 h5ad 路径 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-minG, --min_genes` | **None** | 每个细胞最少基因数 |
+| `-maxG, --max_genes` | **None** | 每个细胞最多基因数 |
+| `-minU, --min_counts` | **None** | 每个细胞最少 UMI 数 |
+| `-maxU, --max_counts` | **None** | 每个细胞最多 UMI 数 |
+| `-minC, --min_cells` | **None** | 每个**基因**至少在多少个细胞中表达才保留（这是一条基因层面的阈值）|
+| `-maxMT, --max_mt` | **None** | 线粒体基因占比上限（%）|
+| `-maxHB, --max_hb` | **None** | 血红蛋白基因占比上限（%）|
+| `-BK, --batch_key` | None | 批次列名（`adata.obs` 的列）；给了就去批次 + 分步去双细胞，并在 UMAP 上单独出一张图 |
+| `-nPC, --n_pcs` | 30 | 聚类用的 PC 数（注意 PCA 实际算了 50 个主成分，这里只取前 nPC 个）|
+| `-nHVG, --n_top_genes` | 2000 | 高变基因数量 |
+| `-res, --resolution` | 1.0 | 最终 Leiden 聚类分辨率 |
+| `-dpi, --dpi` | 300 | 出图 dpi |
+
+#### 用法示例
+
+**必须分两次跑**（因为 7 个 QC 阈值默认全为 None）：
+
+```bash
+# 第一次：只给输入输出，脚本会画完 QC 图后退出
+./scanpy/scRNA_pipeline_scanpy.py -I raw.h5ad -BK sample -O 01_scanpy -P 01.
+
+# 看完 before_QC_violin.png / before_QC_scatter.png 定阈值，第二次带上全部 7 个参数
+./scanpy/scRNA_pipeline_scanpy.py -I raw.h5ad -BK sample -O 01_scanpy -P 01. \
+    -minG 200 -maxG 2500 -minU 500 -maxU 10000 -minC 3 -maxMT 5 -maxHB 5
+```
+
+#### 输出
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>before_QC_violin.png/.pdf` | 过滤前 4 个 QC 指标的小提琴图（有 `-BK` 时按批次分组）|
+| `<前缀>before_QC_scatter.png/.pdf` | 过滤前 3 张散点图（基因数 vs UMI、mt vs UMI、hb vs UMI）|
+| `<前缀>after_QC_violin.png/.pdf` | 过滤后同上 |
+| `<前缀>after_QC_scatter.png/.pdf` | 过滤后同上 |
+| `<前缀>HVGs.png/.pdf` | 高变基因 | 
+| `<前缀>pca_loadings.png/.pdf` | PCA 载荷 |
+| `<前缀>pca_variance_ratio.png/.pdf` | 各主成分方差贡献 |
+| `<前缀>pca.png/.pdf` | PCA 散点 |
+| `<前缀>umap_clusters.png/.pdf` | **6 个分辨率并排**的 UMAP（0.2 / 0.5 / 0.8 / 1.0 / 1.2 / 1.5）|
+| `<前缀>umap_leiden.png/.pdf` | 最终分辨率的 Leiden 聚类 UMAP（标签画在点上）|
+| `<前缀>umap_<batch_key>.png/.pdf` | 按批次着色的 UMAP（仅 `-BK` 时）|
+| `<前缀>marker_genes.png/.pdf` | 各 cluster top20 marker 图 |
+| `<前缀>all_markers.csv` | 全部 cluster 的 marker 表（cluster / 基因 / logFC / p 值等）|
+| `<前缀>preprocessed.h5ad` | **最终对象**（含降维、聚类、marker 结果）|
+
+示例输出：`Images/scanpy/pipeline/`。GPU 版产物结构相同。
+
+#### 注意事项
+
+- **两段式 QC 是设计，不是 bug**：7 个 QC 阈值任一为 None 时，脚本画完 `before_QC_*` 图后**以退出码 0 结束**，并打印缺少哪些参数 + 一条示例命令。补齐后重跑才会继续。所以**第一次跑一定会停在这里**。
+- **`-minC` 与其他 6 个参数的方向不同**：`-minC` 是「基因至少在几个细胞里表达」（基因过滤），其余 6 个是「细胞要满足什么条件」（细胞过滤）。
+- **HVG 用的是 `counts` 层**（`layer="counts"`），不是 log 化后的数据；给了 `-BK` 会按批次选高变基因。
+- **Leiden 用 `flavor='igraph'`**，所以不需要 `leidenalg` 包。
+- **会跑 6 个分辨率**（0.2–1.5）用于对比，`-res` 只决定最终保存哪一个。数据大时这 6 次聚类是主要耗时之一。
+- **输出 h5ad 里三个矩阵分别是**：`adata.X` = **z-score**（`sc.pp.scale(max_value=10)` 就地覆盖，取值约 −3 ~ 10）；`adata.layers['counts']` = 原始 counts；`adata.layers['log1p']` = log 归一化表达量；`adata.raw.X` = 全基因的 log1p。**想在 `.X` 上画表达量或算均值时，请显式改用 `layers['log1p']` 或 `raw`**，否则拿到的是 z-score。
+- 该 h5ad 会较大：`X` 是稠密的 float64 z-score 矩阵（未压缩时约为 `细胞数 × 基因数 × 8` 字节），加上 counts / log1p / raw 三份表达数据。细胞数很多时需要相应内存；若机器内存吃紧，可自行把 `sc.pp.scale` 改为只对 HVG 做。
+- **`-BK` 写错列名在读入数据后立即退出**：脚本在 Step 1 之后校验该列是否存在，不存在则打印可用列名并 `sys.exit(1)`，不会白跑 QC。
+- **PCA 算了 50 个主成分，但聚类只用前 `-nPC` 个**（默认 30）——`-nPC` 超过 50 无意义。
+- **Scrublet 依赖 `scrublet` 包**，缺失会在 Step 3 失败。
+
+---
+
+### 二、scRNA_annotate_scanpy.py —— 细胞类型注释
+
+#### 功能
+
+**把聚类的编号变成有生物学含义的细胞类型名**。分两个阶段：
+1. **注释前**（`-MB`）：按给定的「细胞类型 → marker 基因」表画 dotplot，用来判断每个 cluster 是什么
+2. **注释后**（`-MA`）：按给定的「cluster → 细胞类型」表把标签写进 `adata.obs['celltype']`，再出 UMAP 与 dotplot
+
+对应 Seurat 路线的 `scRNA_annotate_step5.r`。
+
+#### 输入
+
+- `-I`：一个已聚类、已算 UMAP 的 h5ad（通常是 pipeline 的 `preprocessed.h5ad`）
+- `-MB`：**注释前的 marker 表**，2 列 TSV，无表头：`CellType` + `marker基因（逗号分隔）`
+- `-MA`：**注释后的映射表**，3 列 TSV，无表头：`Cluster` + `marker基因（逗号分隔）` + `CellType`
+
+#### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| 已聚类的 h5ad |
+| `-MB, --markers_before` | None | 注释前 marker 表（2 列 TSV）|
+| `-MA, --markers_after` | None | 注释后映射表（3 列 TSV）|
+| `-CK, --cluster_key` | leiden | cluster 标签所在的 `adata.obs` 列 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-S, --split` | 关 | 按细胞类型拆开，每种类型单独出一张 dotplot（marker 很多时用）|
+| `-CO, --celltype_order` | None | 指定细胞类型在图上的顺序（逗号或空格分隔）|
+| `--dendrogram` / `--no-dendrogram` | 显示树状图 | 控制注释前 dotplot 是否画树状图。默认显示，用 `--no-dendrogram` 关闭（该开关无短参数）|
+| `-VR, --var_group_rotation` | 45 | 细胞类型标签旋转角度 |
+| `-DW, --dotplot_width` | None（自动）| dotplot 宽度（英寸）|
+| `-DH, --dotplot_height` | None（自动）| dotplot 高度（英寸）|
+| `-dpi, --dpi` | 300 | 出图 dpi |
+
+#### 用法示例
+
+```bash
+# 阶段一：画 marker dotplot 判断 cluster 身份
+./scanpy/scRNA_annotate_scanpy.py -I 01_scanpy/01.preprocessed.h5ad \
+    -MB markers.tsv -P 02. -O 02_annotation
+
+# 阶段二：写回注释并出图
+./scanpy/scRNA_annotate_scanpy.py -I 01_scanpy/01.preprocessed.h5ad \
+    -MA annotation.tsv -CO 'CellTypeA,CellTypeB,CellTypeC' -P 02. -O 02_annotation
+```
+
+#### 输出
+
+**`-MB` 模式**
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀><cluster_key>_umap.png/.pdf` | cluster 的 UMAP |
+| `<前缀><cluster_key>_dotplot.png/.pdf` | 各 cluster 的 marker dotplot（带树状图）|
+| `<前缀>markers_dotplot/` | 仅 `-S`：该子目录下每种细胞类型一张 dotplot |
+
+**`-MA` 模式**
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>umap_celltype.png/.pdf` | 按 celltype 着色的 UMAP（标签画在点上）|
+| `<前缀>dotplot_celltype.png/.pdf` | 各 celltype 的 marker dotplot |
+| `<前缀>annotated.h5ad` | **最终对象**（`adata.obs['celltype']` 已写入）|
+
+示例输出：`Images/scanpy/annotate/`。
+
+#### 注意事项
+
+- **`-MB` 与 `-MA` 是两阶段，不是二选一**：先用 `-MB` 看图，再用 `-MA` 写回。两个都给时按顺序都会执行。
+- **两个表都是 TSV 且无表头**，列顺序固定；`-MB` 是 2 列、`-MA` 是 3 列，给错列数会直接报错。
+- **`-MA` 里没有出现的 cluster 会被填成 `"Unknown"`**，脚本会打印注释覆盖率（`Annotated cells: x / y`）——覆盖率明显不足说明映射表漏了 cluster。
+- **关闭树状图用 `--no-dendrogram`**：默认会画树状图（`sc.tl.dendrogram` 预计算），marker 很多时可以让 dotplot 更紧凑。
+- **`-MA` 输出的 dotplot 不带树状图**（代码里写死 `dendrogram=False`），只有 `-MB` 阶段的带。
+- **`-CO` 只影响图的顺序**，不改变注释结果。
+- **输出文件名里的 cluster 名会做字符替换**（去掉特殊字符），带点号或斜杠的 cluster 名要注意。
+
+---
+
+### 三、scRNA_DE_scanpy.py —— 差异表达分析
+
+#### 功能
+
+**找出每个 cluster 的 marker 基因**：对指定 cluster 列做组间差异检验（Wilcoxon / t-test / logreg），出 marker 概览图与逐 cluster 的 dotplot，并把结果存表。
+
+与本库 R 侧脚本的区别：`scRNA_pseudobulk_DE.r` 是**样本级** pseudobulk + DESeq2（可外推的组间结论）；本脚本是**细胞级** `rank_genes_groups`（marker 发现用途，有伪重复问题）。两者用途不同，不要互相替代。
+
+#### 输入
+
+一个已聚类的 h5ad（`adata.obs` 里有 cluster 列，且已归一化 + log 化）。
+
+#### 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-I, --input` | 无（必填）| 已聚类的 h5ad |
+| `-CK, --cluster_key` | leiden | cluster 标签所在的列 |
+| `-M, --method` | wilcoxon | 检验方法，只接受 `wilcoxon` / `t-test` / `logreg`；写错由 argparse 直接拒绝并列出可选值 |
+| `-n_genes` | 20 | marker 概览图里每个 cluster 显示的基因数 |
+| `-top_n` | 10 | 逐 cluster dotplot 里取的 top marker 数 |
+| `-P, --prefix` | 空 | 输出文件名前缀 |
+| `-O, --outpath` | 当前目录 | 输出目录 |
+| `-dpi, --dpi` | 300 | 出图 dpi |
+| `-F, --force` | 关 | 强制重算 DE（默认复用已有结果）|
+
+#### 用法示例
+
+```bash
+./scanpy/scRNA_DE_scanpy.py -I 02_annotation/02.annotated.h5ad \
+    -CK celltype -M wilcoxon -n_genes 20 -top_n 10 -P 03. -O 03_DE
+```
+
+#### 输出
+
+| 文件 | 说明 |
+|---|---|
+| `<前缀>marker_genes.png/.pdf` | 各 cluster top `-n_genes` 个 marker 的图 |
+| `<前缀>clusters_DE/` | 子目录 |
+| `<前缀>clusters_DE/<前缀>all_markers.csv` | 全部 cluster 的 marker 表 |
+| `<前缀>clusters_DE/<前缀>cluster_<id>_dotplot.png/.pdf` | 每个 cluster 的 top `-top_n` marker dotplot |
+| `<前缀>DE_analyzed.h5ad` | 含 `adata.uns['rank_genes_groups']` 的对象 |
+
+示例输出：`Images/scanpy/DE/`。
+
+#### 注意事项
+
+- **默认会复用已有结果**：若 `adata.uns['rank_genes_groups']` 已存在且 `groupby` 与当前 `-CK` 一致，跳过计算直接出图。改 `-CK` 会自动重算；想强制重算加 `-F`。
+- **`-M` 有取值校验**：只接受 `wilcoxon` / `t-test` / `logreg`，写错会在参数解析阶段直接报 `invalid choice` 并列出可选值。
+- **结果是细胞级检验**：p 值会被细胞数放大，**不能当作组间差异的统计证据**——那是 `scRNA_pseudobulk_DE.r` 的职责。
+- **输出子目录名含前缀**：`<前缀>clusters_DE/`，注意别与其它输出混淆。
+- **cluster 名里的特殊字符会被替换**后再用于文件名。
+
+---
+
+### 四、scRNA_pipeline_scanpy_GPU.py —— GPU 加速版
+
+#### 功能
+
+**与 `scRNA_pipeline_scanpy.py` 完全相同的 13 步流程**，只是把 `scanpy`（`sc.*`）换成 `rapids-singlecell`（`rsc.*`），在 CUDA 显卡上运行以缩短耗时。
+
+**两者只跑一个**，不要串联。输出格式一致，下游脚本通用。
+
+#### 输入
+
+同 CPU 版：一个 h5ad（`adata.X` 为原始 counts）。
+
+#### 参数
+
+与 CPU 版**完全相同**（`-I -O -P -minG -maxG -minU -maxU -minC -maxMT -maxHB -BK -nPC -nHVG -res -dpi`），**额外多一个**：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `-raw, --save_raw` | 关 | 输出 h5ad 时保留**全部基因**；默认只保留高变基因（可显著减小文件）|
+
+#### 用法示例
+
+```bash
+./scanpy/scRNA_pipeline_scanpy_GPU.py -I raw.h5ad -BK sample -O 01_scanpy_gpu -P 01. \
+    -minG 200 -maxG 2500 -minU 500 -maxU 10000 -minC 3 -maxMT 5 -maxHB 5
+```
+
+#### 输出
+
+与 CPU 版一致（`before_QC_*` / `after_QC_*` / `HVGs` / `pca*` / `umap_clusters` / `umap_leiden` / `umap_<batch>` / `marker_genes` / `all_markers.csv` / `preprocessed.h5ad`）。
+
+#### 注意事项
+
+- **必须有 CUDA 显卡**：脚本启动时先 `import cupy` 并检查 GPU，缺 `cupy` 或没有可用 GPU 会**立即报错退出**，不会退回 CPU 模式。
+- **依赖 `cupy` + `rapids-singlecell`**，还需与 CUDA 版本匹配。
+- **`-raw` 决定 h5ad 里存多少基因**：默认只存高变基因（文件小、但下游只能用这批基因）；需要全部基因时加 `-raw`。
+- **数值结果与 CPU 版可能有细微差异**：GPU 与 CPU 的浮点运算顺序不同，聚类边界附近的细胞可能落到不同 cluster，属于正常现象。
+- **无 GPU 环境下无法验证**：本脚本在本机未做过运行验证，仅通过语法检查。
+
+
+---
+
 ## 附录：环境与依赖
 
 **R 侧**（主流程各步与独立 R 脚本）：
@@ -2085,6 +3680,10 @@ S3,treat
 - 桑基图（`scRNA_composition_sccoda.py` 配套 `sankey_composition.r`）：`ggalluvial`、`RColorBrewer`、`scales`、`ggplot2`、`dplyr`、`tidyr`
 - 格式转换（`scRNA_h5ad2rds.r`、`scRNA_h5ad_seurat_convert.r`）：`anndataR`（默认路径）；可选 `sceasy`（经 reticulate，其配套 Python 环境需预装 `numpy` + `anndata`）
 - 矩阵读入（`scRNA_mtx2rds.r`）：`Matrix`（`readMM`）、`data.table`（`fread`）
+- velocity 输入准备（`scRNA_velocityPrepare.r`）：`anndataR`（AnnData 转换 + `write_h5ad`）、`Seurat`
+- 虚拟敲除（`scRNA_scTenifoldKnk.r`）：`scTenifoldKnk`（GitHub `cailab-tamu/scTenifoldKnk`）、`Seurat`、`tidyverse`、`patchwork`、`igraph`、`ggrepel`、`enrichR`（`plotKO` 会联网访问 Enrichr）
+- 共表达网络（`scRNA_hdWGCNA.r`）：`hdWGCNA`（GitHub `smorabit/hdWGCNA`）、`WGCNA`、`UCell`、`ggradar`、`Seurat`、`harmonypy`（metacell 与降维依赖 harmony）、`tidyverse`、`patchwork`
+- pySCENIC 输入准备与 RSS（`scRNA_pyscenic_prepare.r` / `scRNA_pyscenic_RSS.r`）：`SCopeLoomR`（写/读 loom）、`SCENIC`（`calcRSS` / `plotRSS` / `getAUC`）、`gridExtra`、`Seurat`、`tidyverse`
 - 亚型聚类（`scRNA_subcelltype_clustering.r`）：`clustree`、`harmony`、`reticulate`（Leiden 时需 `leidenalg`）、`patchwork`
 - 差异表达火山图与 pseudobulk DE（`scRNA_pseudobulk_DE.r`）：`ggrepel`（标签避让）、`RColorBrewer`、`scales`；细胞类型 > 66 时另需 `viridis`
 - pseudobulk 差异表达（`scRNA_pseudobulk_DE.r`）：`DESeq2`（Bioconductor）、`Seurat`、`Matrix`、`tidyverse`、`ggrepel`、`RColorBrewer`、`scales`
@@ -2096,13 +3695,16 @@ S3,treat
 - 去双细胞（`scRNA_dedoublets_step2.r` / `scRNA_DoubleFinder.r`）：`scDblFinder` / `DoubletFinder`、`celda`（DecontX）、`BiocParallel`、`Seurat`、`tidyverse`、`patchwork`、`reticulate`（Leiden 时）
 - 判别分析（`scRNA_ROC.r`）：`pROC`（AUC / ROC）、`tidyverse`、`Seurat`
 - 细胞通讯（`scRNA_cellchat_single.r` / `scRNA_cellchat_compare.r`）：`CellChat`、`NMF`（通讯模式聚类）、`ggalluvial`、`patchwork`、`ComplexHeatmap`（outgoing 通路热图）、`Seurat`、`tidyverse`
+- 拟时序与轨迹（`scRNA_spRNA_Monocle3.r`）：`monocle3`、`SeuratWrappers`（`as.cell_data_set`）、`pheatmap`（模块热图）、`igraph`、`leidenbase`、`Rcpp`、`Seurat`、`tidyverse`
 
-**Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`）：
+**Python 侧**（`scRNA_spRNA_h5ad_preprocess.py`、`scRNA_composition_sccoda.py`、`scRNA_velocity.py`、`scRNA_pyscenic.py`）：
 
 - `scCODA`、`tensorflow` / `tensorflow-probability`
 - `anndata`（注意与 `zarr` / `numpy` 的版本匹配：`anndata < 0.12` 拒 zarr ≥3，`anndata ≥ 0.13` 要求 numpy ≥2.1）
 - h5ad 预处理：`scanpy`、`anndata`、`scipy`、`numpy`、`pandas`
 - 组成分析：`numpy`、`pandas`、`matplotlib`、`seaborn`
+- RNA velocity（`scRNA_velocity.py`）：`scanpy`、`scvelo`、`anndata`、`numpy`、`pandas`、`h5py`、`matplotlib`（建议用 `scanpy` 环境运行）
+- pySCENIC（`scRNA_pyscenic.py`）：`pyscenic`（0.12.x，含 `arboreto` / `ctxcore` / `primp`）、`loompy`、`dask`、`pandas`、`numpy`（须用独立的 pySCENIC 环境，Python 3.7）
 - 桑基图需 `Rscript` 与 R 的 `ggalluvial`（缺失时该图跳过，其余产物不受影响）
 
 **解释器**：脚本 shebang 用 `/usr/bin/env` 解析 `Rscript` / `python3`，运行前请确保所用环境在 `PATH` 上（例如 `export PATH=/path/to/env/bin:$PATH`）；若不在 PATH 上，直接 `./<script>` 会报解释器未找到，此时用 `Rscript <script>.r …` / `/path/to/env/bin/python <script>.py …` 显式调用即可。
